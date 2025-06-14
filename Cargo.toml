@@ -6,7 +6,7 @@ members = ["crates/*"]
 authors = ["Vite+ Authors"]
 edition = "2024"
 license = "MIT"
-rust-version = "1.85.0"
+rust-version = "1.87.0"
 
 [workspace.lints.rust]
 absolute_paths_not_starting_with_crate = "warn"
