@@ -466,9 +466,9 @@ dependencies = [
 
 [[package]]
 name = "bindgen"
-version = "0.71.1"
+version = "0.72.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f58bf3d7db68cfbac37cfc485a8d711e87e064c3d0fe0435b92f7a407f9d6b3"
+checksum = "993776b509cfb49c750f11b8f07a46fa23e0a1386ffc01fb1e7d343efc387895"
 dependencies = [
  "bitflags 2.9.4",
  "cexpr",
@@ -645,9 +645,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.36"
+version = "1.2.39"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5252b3d2648e5eedbc1a6f501e3c795e07025c1e93bbf8bbdd6eef7f447a6d54"
+checksum = "e1354349954c6fc9cb0deab020f27f783cf0b604e8bb754dc4658ecf0d29c35f"
 dependencies = [
  "find-msvc-tools",
  "shlex",
@@ -1457,9 +1457,9 @@ dependencies = [
 
 [[package]]
 name = "find-msvc-tools"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fd99930f64d146689264c637b5af2f0233a933bef0d8570e2526bf9e083192d"
+checksum = "1ced73b1dacfc750a6db6c0a0c3a3853c8b41997e2e2c563dc90804ae6867959"
 
 [[package]]
 name = "fixedbitset"
@@ -1535,6 +1535,7 @@ dependencies = [
  "csv-async",
  "ctor 0.4.3",
  "flate2",
+ "fspy_detours_sys",
  "fspy_preload_unix",
  "fspy_preload_windows",
  "fspy_seccomp_unotify",
@@ -1543,7 +1544,6 @@ dependencies = [
  "futures-util",
  "libc",
  "memmap2",
- "ms-detours",
  "nix 0.30.1",
  "ouroboros",
  "passfd 0.2.0 (git+https://github.com/polachok/passfd)",
@@ -1560,6 +1560,15 @@ dependencies = [
  "winapi",
  "winsafe 0.0.24",
  "xxhash-rust",
+]
+
+[[package]]
+name = "fspy_detours_sys"
+version = "0.0.0"
+dependencies = [
+ "bindgen",
+ "cc",
+ "winapi",
 ]
 
 [[package]]
@@ -1612,8 +1621,8 @@ dependencies = [
  "constcat",
  "dashmap",
  "derive-where",
+ "fspy_detours_sys",
  "fspy_shared",
- "ms-detours",
  "ntapi",
  "path-dedot",
  "ref-cast",
@@ -1655,7 +1664,6 @@ dependencies = [
  "bytemuck",
  "derive-where",
  "libc",
- "ms-detours",
  "nix 0.30.1",
  "os_str_bytes",
  "phf",
@@ -2563,17 +2571,6 @@ dependencies = [
  "log",
  "wasi 0.11.1+wasi-snapshot-preview1",
  "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "ms-detours"
-version = "4.0.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "787ffff01b8cccea08858cf318738c6122aa1ca9b20ed6505036fefe466c2029"
-dependencies = [
- "bindgen",
- "cc",
- "winapi",
 ]
 
 [[package]]
