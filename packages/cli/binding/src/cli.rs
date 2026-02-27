@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use tokio::fs::write;
 use vite_error::Error;
 use vite_path::{AbsolutePath, AbsolutePathBuf};
-use vite_shared::{PrependOptions, prepend_to_path_env};
+use vite_shared::{PrependOptions, output, prepend_to_path_env};
 use vite_str::Str;
 use vite_task::{
     Command, CommandHandler, ExitStatus, HandledCommand, ScriptCommand, Session, SessionCallbacks,
@@ -96,6 +96,27 @@ pub enum SynthesizableSubcommand {
     Install {
         #[clap(allow_hyphen_values = true, trailing_var_arg = true)]
         args: Vec<String>,
+    },
+    /// Run format, lint, and type checks
+    Check {
+        /// Auto-fix format and lint issues
+        #[arg(long)]
+        fix: bool,
+        /// Skip format check
+        #[arg(long = "no-fmt")]
+        no_fmt: bool,
+        /// Skip lint check
+        #[arg(long = "no-lint")]
+        no_lint: bool,
+        /// Disable type-aware linting
+        #[arg(long = "no-type-aware")]
+        no_type_aware: bool,
+        /// Disable TypeScript type checking
+        #[arg(long = "no-type-check")]
+        no_type_check: bool,
+        /// File paths to check (passed through to fmt and lint)
+        #[arg(trailing_var_arg = true)]
+        paths: Vec<String>,
     },
 }
 
@@ -494,6 +515,11 @@ impl SubcommandResolver {
                     envs: merge_resolved_envs(envs, resolved.envs),
                 })
             }
+            SynthesizableSubcommand::Check { .. } => {
+                anyhow::bail!(
+                    "Check is a composite command and cannot be resolved to a single subcommand"
+                );
+            }
             SynthesizableSubcommand::Install { args } => {
                 let package_manager =
                     vite_install::PackageManager::builder(cwd).build_with_default().await?;
@@ -589,6 +615,10 @@ impl CommandHandler for VitePlusCommandHandler {
         let cli_args =
             CLIArgs::try_parse_from(iter::once("vp").chain(command.args.iter().map(Str::as_str)))?;
         match cli_args {
+            CLIArgs::Synthesizable(SynthesizableSubcommand::Check { .. }) => {
+                // Check is a composite command — run as a subprocess in task scripts
+                Ok(HandledCommand::Verbatim)
+            }
             CLIArgs::Synthesizable(subcmd) => {
                 let resolved = self.resolver.resolve(subcmd, &command.envs, &command.cwd).await?;
                 Ok(HandledCommand::Synthesized(resolved.into_synthetic_plan_request()))
@@ -644,31 +674,16 @@ impl UserConfigLoader for VitePlusConfigLoader {
     }
 }
 
-/// Execute a synthesizable subcommand directly (not through vite-task Session).
-/// No caching, no task graph, no dependency resolution.
-async fn execute_direct_subcommand(
+/// Resolve a single subcommand and execute it, returning its exit status.
+async fn resolve_and_execute(
+    resolver: &mut SubcommandResolver,
     subcommand: SynthesizableSubcommand,
+    envs: &Arc<FxHashMap<Arc<OsStr>, Arc<OsStr>>>,
     cwd: &AbsolutePathBuf,
-    options: Option<CliOptions>,
+    cwd_arc: &Arc<AbsolutePath>,
 ) -> Result<ExitStatus, Error> {
-    let (workspace_root, _) = vite_workspace::find_workspace_root(cwd)?;
-    let workspace_path: Arc<AbsolutePath> = workspace_root.path.into();
-
-    let mut resolver = if let Some(options) = options {
-        SubcommandResolver::new(Arc::clone(&workspace_path)).with_cli_options(options)
-    } else {
-        SubcommandResolver::new(Arc::clone(&workspace_path))
-    };
-
-    let envs: Arc<FxHashMap<Arc<OsStr>, Arc<OsStr>>> = Arc::new(
-        std::env::vars_os()
-            .map(|(k, v)| (Arc::from(k.as_os_str()), Arc::from(v.as_os_str())))
-            .collect(),
-    );
-    let cwd_arc: Arc<AbsolutePath> = cwd.clone().into();
-
     let resolved =
-        resolver.resolve(subcommand, &envs, &cwd_arc).await.map_err(|e| Error::Anyhow(e))?;
+        resolver.resolve(subcommand, envs, cwd_arc).await.map_err(|e| Error::Anyhow(e))?;
 
     // Resolve the program path using `which` to handle Windows .cmd/.bat files (PATHEXT)
     let program_path = {
@@ -695,11 +710,132 @@ async fn execute_direct_subcommand(
     let mut child = cmd.spawn().map_err(|e| Error::Anyhow(e.into()))?;
 
     let status = child.wait().await;
+    let status = status.map_err(|e| Error::Anyhow(e.into()))?;
+    Ok(ExitStatus(status.code().unwrap_or(1) as u8))
+}
+
+/// Execute a synthesizable subcommand directly (not through vite-task Session).
+/// No caching, no task graph, no dependency resolution.
+async fn execute_direct_subcommand(
+    subcommand: SynthesizableSubcommand,
+    cwd: &AbsolutePathBuf,
+    options: Option<CliOptions>,
+) -> Result<ExitStatus, Error> {
+    let (workspace_root, _) = vite_workspace::find_workspace_root(cwd)?;
+    let workspace_path: Arc<AbsolutePath> = workspace_root.path.into();
+
+    let mut resolver = if let Some(options) = options {
+        SubcommandResolver::new(Arc::clone(&workspace_path)).with_cli_options(options)
+    } else {
+        SubcommandResolver::new(Arc::clone(&workspace_path))
+    };
+
+    let envs: Arc<FxHashMap<Arc<OsStr>, Arc<OsStr>>> = Arc::new(
+        std::env::vars_os()
+            .map(|(k, v)| (Arc::from(k.as_os_str()), Arc::from(v.as_os_str())))
+            .collect(),
+    );
+    let cwd_arc: Arc<AbsolutePath> = cwd.clone().into();
+
+    let status = match subcommand {
+        SynthesizableSubcommand::Check {
+            fix,
+            no_fmt,
+            no_lint,
+            no_type_aware,
+            no_type_check,
+            paths,
+        } => {
+            let mut status = ExitStatus::SUCCESS;
+            let has_paths = !paths.is_empty();
+
+            if !no_fmt {
+                let mut args = if fix { vec![] } else { vec!["--check".to_string()] };
+                if has_paths {
+                    args.push("--no-error-on-unmatched-pattern".to_string());
+                    args.extend(paths.iter().cloned());
+                }
+                if args.is_empty() {
+                    output::info("vp fmt");
+                } else {
+                    let cmd = vite_str::format!("vp fmt {}", args.join(" "));
+                    output::info(&cmd);
+                }
+                status = resolve_and_execute(
+                    &mut resolver,
+                    SynthesizableSubcommand::Fmt { args },
+                    &envs,
+                    cwd,
+                    &cwd_arc,
+                )
+                .await?;
+                if status != ExitStatus::SUCCESS {
+                    resolver.cleanup_temp_files().await;
+                    return Ok(status);
+                }
+            }
+
+            if !no_lint {
+                let mut args = Vec::new();
+                if fix {
+                    args.push("--fix".to_string());
+                }
+                if !no_type_aware {
+                    args.push("--type-aware".to_string());
+                    // --type-check requires --type-aware as prerequisite
+                    if !no_type_check {
+                        args.push("--type-check".to_string());
+                    }
+                }
+                if has_paths {
+                    args.extend(paths.iter().cloned());
+                }
+                if args.is_empty() {
+                    output::info("vp lint");
+                } else {
+                    let cmd = vite_str::format!("vp lint {}", args.join(" "));
+                    output::info(&cmd);
+                }
+                status = resolve_and_execute(
+                    &mut resolver,
+                    SynthesizableSubcommand::Lint { args },
+                    &envs,
+                    cwd,
+                    &cwd_arc,
+                )
+                .await?;
+                if status != ExitStatus::SUCCESS {
+                    resolver.cleanup_temp_files().await;
+                    return Ok(status);
+                }
+            }
+
+            // Re-run fmt after lint --fix, since lint fixes can break formatting
+            // (e.g. the curly rule adding braces to if-statements)
+            if fix && !no_fmt && !no_lint {
+                let mut args = Vec::new();
+                if has_paths {
+                    args.push("--no-error-on-unmatched-pattern".to_string());
+                    args.extend(paths.into_iter());
+                }
+                status = resolve_and_execute(
+                    &mut resolver,
+                    SynthesizableSubcommand::Fmt { args },
+                    &envs,
+                    cwd,
+                    &cwd_arc,
+                )
+                .await?;
+            }
+
+            status
+        }
+        other => resolve_and_execute(&mut resolver, other, &envs, cwd, &cwd_arc).await?,
+    };
 
     resolver.cleanup_temp_files().await;
 
-    let status = status.map_err(|e| Error::Anyhow(e.into()))?;
-    Ok(ExitStatus(status.code().unwrap_or(1) as u8))
+    Ok(status)
 }
 
 /// Execute a vite-task command (run, cache) through Session.
@@ -817,6 +953,7 @@ fn print_help() {
   {bold}test{reset}       Run tests
   {bold}lint{reset}       Lint code
   {bold}fmt{reset}        Format code
+  {bold}check{reset}      Run format, lint, and type checks
   {bold}pack{reset}       Build library
   {bold}run{reset}        Run tasks
   {bold}exec{reset}       Execute a command from local node_modules/.bin
