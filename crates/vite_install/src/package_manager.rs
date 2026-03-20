@@ -44,6 +44,7 @@ pub enum PackageManagerType {
     Pnpm,
     Yarn,
     Npm,
+    Bun,
 }
 
 impl fmt::Display for PackageManagerType {
@@ -52,6 +53,7 @@ impl fmt::Display for PackageManagerType {
             Self::Pnpm => write!(f, "pnpm"),
             Self::Yarn => write!(f, "yarn"),
             Self::Npm => write!(f, "npm"),
+            Self::Bun => write!(f, "bun"),
         }
     }
 }
@@ -194,6 +196,11 @@ impl PackageManager {
                 ignores.push("!**/package-lock.json".into());
                 ignores.push("!**/npm-shrinkwrap.json".into());
             }
+            PackageManagerType::Bun => {
+                ignores.push("!**/bun.lock".into());
+                ignores.push("!**/bun.lockb".into());
+                ignores.push("!**/bunfig.toml".into());
+            }
         }
 
         // if the workspace is a monorepo, keep workspace packages' parent directories to watch for new packages being added
@@ -259,6 +266,7 @@ pub fn get_package_manager_type_and_version(
                 "pnpm" => return Ok((PackageManagerType::Pnpm, version.into(), hash)),
                 "yarn" => return Ok((PackageManagerType::Yarn, version.into(), hash)),
                 "npm" => return Ok((PackageManagerType::Npm, version.into(), hash)),
+                "bun" => return Ok((PackageManagerType::Bun, version.into(), hash)),
                 _ => return Err(Error::UnsupportedPackageManager(name.into())),
             }
         }
@@ -270,6 +278,16 @@ pub fn get_package_manager_type_and_version(
     // if pnpm-workspace.yaml exists, use pnpm@latest
     if matches!(workspace_root.workspace_file, WorkspaceFile::PnpmWorkspaceYaml(_)) {
         return Ok((PackageManagerType::Pnpm, version, None));
+    }
+
+    // if bun.lock (text format, v1.2+) or bun.lockb (binary format, v1.0-1.1) exists, use bun@latest
+    let bun_lock_path = workspace_root.path.join("bun.lock");
+    if is_exists_file(&bun_lock_path)? {
+        return Ok((PackageManagerType::Bun, version, None));
+    }
+    let bun_lockb_path = workspace_root.path.join("bun.lockb");
+    if is_exists_file(&bun_lockb_path)? {
+        return Ok((PackageManagerType::Bun, version, None));
     }
 
     // if pnpm-lock.yaml exists, use pnpm@latest
@@ -349,6 +367,104 @@ async fn get_latest_version(package_manager_type: PackageManagerType) -> Result<
     Ok(package_json.version)
 }
 
+async fn get_bun_latest_version() -> Result<Str, Error> {
+    let url = "https://api.github.com/repos/oven-sh/bun/releases/latest";
+    #[derive(serde::Deserialize)]
+    struct GitHubRelease {
+        tag_name: String,
+    }
+    let release: GitHubRelease = HttpClient::new().get_json(url).await?;
+    let version = release.tag_name.strip_prefix("bun-").unwrap_or(&release.tag_name);
+    Ok(version.into())
+}
+
+async fn download_bun(version: &str) -> Result<(AbsolutePathBuf, Str), Error> {
+    let home_dir = vite_shared::get_vite_plus_home()?;
+    let bin_name = "bun";
+    let target_dir = home_dir.join("package_manager").join(bin_name).join(version);
+    let install_dir = target_dir.join(bin_name);
+
+    let bin_prefix = install_dir.join("bin");
+    let bin_file = bin_prefix.join(bin_name);
+    if is_exists_file(&bin_file)? {
+        return Ok((install_dir, bin_name.into()));
+    }
+
+    let parent_dir = target_dir.parent().unwrap();
+    tokio::fs::create_dir_all(parent_dir).await?;
+
+    let lock_path = parent_dir.join(format!("{version}.lock"));
+    tracing::debug!("Acquire lock file: {:?}", lock_path);
+    let lock_file = File::create(lock_path.as_path())?;
+    lock_file.lock()?;
+    tracing::debug!("Lock acquired: {:?}", lock_path);
+
+    if is_exists_file(&bin_file)? {
+        tracing::debug!("bin_file already exists after lock acquisition, skip download");
+        return Ok((install_dir, bin_name.into()));
+    }
+
+    let os = if cfg!(target_os = "linux") {
+        "linux"
+    } else if cfg!(target_os = "macos") {
+        "darwin"
+    } else if cfg!(target_os = "windows") {
+        "windows"
+    } else {
+        return Err(Error::UnsupportedPlatform);
+    };
+
+    let arch = if cfg!(target_arch = "x86_64") {
+        "x64"
+    } else if cfg!(target_arch = "aarch64") {
+        "arm64"
+    } else {
+        return Err(Error::UnsupportedArchitecture);
+    };
+
+    let archive_name = format!("bun-{os}-{arch}.zip");
+    let download_url = format!(
+        "https://github.com/oven-sh/bun/releases/download/bun-{}/{}",
+        version, archive_name
+    );
+
+    tracing::debug!("Downloading bun {} from {}", version, download_url);
+
+    let target_dir_tmp = tempfile::tempdir_in(parent_dir)?.path().to_path_buf();
+    let zip_file = target_dir_tmp.join(&archive_name);
+
+    HttpClient::new().download_file(&download_url, &zip_file).await.map_err(|err| {
+        if let Error::Reqwest(e) = &err
+            && let Some(status) = e.status()
+            && status == reqwest::StatusCode::NOT_FOUND
+        {
+            Error::PackageManagerVersionNotFound {
+                name: "bun".into(),
+                version: version.into(),
+                url: download_url.into(),
+            }
+        } else {
+            err
+        }
+    })?;
+
+    tracing::debug!("Extract bun zip: {:?}", zip_file);
+    let target_dir_tmp_clone = target_dir_tmp.clone();
+    let zip_file_clone = zip_file.clone();
+    tokio::task::spawn_blocking(move || {
+        zip_extract::extract(zip_file_clone, &target_dir_tmp_clone)
+    })
+    .await??;
+
+    tracing::debug!("Rename {:?} to {:?}", target_dir_tmp, target_dir);
+    remove_dir_all_force(&target_dir).await?;
+    tokio::fs::rename(&target_dir_tmp, &target_dir).await?;
+
+    create_shim_files(PackageManagerType::Bun, &bin_prefix).await?;
+
+    Ok((install_dir, bin_name.into()))
+}
+
 /// Download the package manager and extract it to the vite-plus home directory.
 /// Return the install directory, e.g. `$VITE_PLUS_HOME/package_manager/pnpm/10.0.0/pnpm`
 pub async fn download_package_manager(
@@ -356,6 +472,16 @@ pub async fn download_package_manager(
     version_or_latest: &str,
     expected_hash: Option<&str>,
 ) -> Result<(AbsolutePathBuf, Str, Str), Error> {
+    if matches!(package_manager_type, PackageManagerType::Bun) {
+        let version: Str = if version_or_latest == "latest" {
+            get_bun_latest_version().await?
+        } else {
+            version_or_latest.into()
+        };
+        let (install_dir, package_name) = download_bun(&version).await?;
+        return Ok((install_dir, package_name, version));
+    }
+
     let version: Str = if version_or_latest == "latest" {
         get_latest_version(package_manager_type).await?
     } else {
@@ -494,6 +620,10 @@ async fn create_shim_files(
             bin_names.push(("npm", "npm-cli"));
             bin_names.push(("npx", "npx-cli"));
         }
+        PackageManagerType::Bun => {
+            // bun is a single binary
+            bin_names.push(("bun", "bun"));
+        }
     }
 
     let bin_prefix = bin_prefix.as_ref();
@@ -570,6 +700,7 @@ fn interactive_package_manager_menu() -> Result<PackageManagerType, Error> {
         ("pnpm (recommended)", PackageManagerType::Pnpm),
         ("npm", PackageManagerType::Npm),
         ("yarn", PackageManagerType::Yarn),
+        ("bun", PackageManagerType::Bun),
     ];
 
     let mut selected_index = 0;
@@ -664,6 +795,9 @@ fn interactive_package_manager_menu() -> Result<PackageManagerType, Error> {
                 KeyCode::Char('3') if options.len() > 2 => {
                     break Ok(options[2].1);
                 }
+                KeyCode::Char('4') if options.len() > 3 => {
+                    break Ok(options[3].1);
+                }
                 KeyCode::Esc | KeyCode::Char('q') => {
                     // Exit on escape/quit
                     terminal::disable_raw_mode()?;
@@ -693,6 +827,7 @@ fn interactive_package_manager_menu() -> Result<PackageManagerType, Error> {
             PackageManagerType::Pnpm => "pnpm",
             PackageManagerType::Npm => "npm",
             PackageManagerType::Yarn => "yarn",
+            PackageManagerType::Bun => "bun",
         };
         println!("\n✓ Selected package manager: {name}\n");
     }
@@ -733,6 +868,7 @@ fn simple_text_prompt() -> Result<PackageManagerType, Error> {
         ("pnpm", PackageManagerType::Pnpm),
         ("npm", PackageManagerType::Npm),
         ("yarn", PackageManagerType::Yarn),
+        ("bun", PackageManagerType::Bun),
     ];
 
     println!("\nNo package manager detected. Please select one:");

@@ -197,6 +197,7 @@ wax = "0.6.0"
 which = "8.0.0"
 xxhash-rust = "0.8.15"
 zip = "7.2"
+zip-extract = "0.2"
 
 # oxc crates with the same version
 oxc = { version = "0.120.0", features = [

@@ -122,6 +122,12 @@ pub enum Error {
     #[error("Unsupported hash algorithm: {0}")]
     UnsupportedHashAlgorithm(Str),
 
+    #[error("Unsupported platform for bun")]
+    UnsupportedPlatform,
+
+    #[error("Unsupported architecture for bun")]
+    UnsupportedArchitecture,
+
     #[error("Cannot find binary path for command '{0}'")]
     CannotFindBinaryPath(Str),
 
