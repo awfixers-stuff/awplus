@@ -8,12 +8,6 @@
 //! - bin/vp is a symlink to ../current/bin/vp
 //! - bin/node, bin/npm, bin/npx are symlinks to ../current/bin/vp
 //! - Symlinks preserve argv[0], allowing tool detection via the symlink name
-//!
-//! On Windows:
-//! - bin/vp.exe, bin/node.exe, bin/npm.exe, bin/npx.exe are trampoline executables
-//! - Each trampoline detects its tool name from its own filename and spawns
-//!   current\bin\vp.exe with VITE_PLUS_SHIM_TOOL env var set
-//! - This avoids the "Terminate batch job (Y/N)?" prompt from .cmd wrappers
 
 use std::process::ExitStatus;
 
@@ -83,12 +77,6 @@ pub async fn execute(refresh: bool, env_only: bool) -> Result<ExitStatus, Error>
         }
     }
 
-    // Best-effort cleanup of .old files from rename-before-copy on Windows
-    #[cfg(windows)]
-    if refresh {
-        cleanup_old_files(&bin_dir).await;
-    }
-
     // Print results
     if !created.is_empty() {
         println!("{}", help::render_heading("Created Shims"));
@@ -119,57 +107,27 @@ pub async fn execute(refresh: bool, env_only: bool) -> Result<ExitStatus, Error>
 
 /// Create symlink in bin/ that points to current/bin/vp.
 async fn setup_vp_wrapper(bin_dir: &vite_path::AbsolutePath, refresh: bool) -> Result<(), Error> {
-    #[cfg(unix)]
-    {
-        let bin_vp = bin_dir.join("vp");
+    let bin_vp = bin_dir.join("vp");
 
-        // Create symlink bin/vp -> ../current/bin/vp
-        let should_create_symlink = refresh
-            || !tokio::fs::try_exists(&bin_vp).await.unwrap_or(false)
-            || !is_symlink(&bin_vp).await; // Replace non-symlink with symlink
+    // Create symlink bin/vp -> ../current/bin/vp
+    let should_create_symlink = refresh
+        || !tokio::fs::try_exists(&bin_vp).await.unwrap_or(false)
+        || !is_symlink(&bin_vp).await; // Replace non-symlink with symlink
 
-        if should_create_symlink {
-            // Remove existing if present (could be old wrapper script or file)
-            if tokio::fs::try_exists(&bin_vp).await.unwrap_or(false) {
-                tokio::fs::remove_file(&bin_vp).await?;
-            }
-            // Create relative symlink
-            tokio::fs::symlink("../current/bin/vp", &bin_vp).await?;
-            tracing::debug!("Created symlink {:?} -> ../current/bin/vp", bin_vp);
+    if should_create_symlink {
+        // Remove existing if present (could be old wrapper script or file)
+        if tokio::fs::try_exists(&bin_vp).await.unwrap_or(false) {
+            tokio::fs::remove_file(&bin_vp).await?;
         }
-    }
-
-    #[cfg(windows)]
-    {
-        let bin_vp_exe = bin_dir.join("vp.exe");
-
-        // Create trampoline bin/vp.exe that forwards to current\bin\vp.exe
-        let should_create = refresh || !tokio::fs::try_exists(&bin_vp_exe).await.unwrap_or(false);
-
-        if should_create {
-            let trampoline_src = get_trampoline_path()?;
-            // On refresh, the existing vp.exe may still be running (the trampoline
-            // that launched us). Windows prevents overwriting a running exe, so we
-            // rename it to a timestamped .old file first, then copy the new one.
-            if tokio::fs::try_exists(&bin_vp_exe).await.unwrap_or(false) {
-                rename_to_old(&bin_vp_exe).await;
-            }
-
-            tokio::fs::copy(trampoline_src.as_path(), &bin_vp_exe).await?;
-            tracing::debug!("Created trampoline {:?}", bin_vp_exe);
-        }
-
-        // Clean up legacy .cmd and shell script wrappers from previous versions
-        if refresh {
-            cleanup_legacy_windows_shim(bin_dir, "vp").await;
-        }
+        // Create relative symlink
+        tokio::fs::symlink("../current/bin/vp", &bin_vp).await?;
+        tracing::debug!("Created symlink {:?} -> ../current/bin/vp", bin_vp);
     }
 
     Ok(())
 }
 
 /// Check if a path is a symlink.
-#[cfg(unix)]
 async fn is_symlink(path: &vite_path::AbsolutePath) -> bool {
     match tokio::fs::symlink_metadata(path).await {
         Ok(m) => m.file_type().is_symlink(),
@@ -194,48 +152,23 @@ async fn create_shim(
             return Ok(false);
         }
         // Remove existing shim for refresh.
-        // On Windows, .exe files may be locked (by antivirus, indexer, or
-        // still-running processes), so rename to .old first instead of deleting.
-        #[cfg(windows)]
-        rename_to_old(&shim_path).await;
-        #[cfg(not(windows))]
-        {
-            tokio::fs::remove_file(&shim_path).await?;
-        }
+        tokio::fs::remove_file(&shim_path).await?;
     }
 
-    #[cfg(unix)]
-    {
-        create_unix_shim(source, &shim_path, tool).await?;
-    }
-
-    #[cfg(windows)]
-    {
-        create_windows_shim(source, bin_dir, tool).await?;
-    }
+    create_unix_shim(source, &shim_path, tool).await?;
 
     Ok(true)
 }
 
-/// Get the filename for a shim (platform-specific).
+/// Get the filename for a shim.
 fn shim_filename(tool: &str) -> String {
-    #[cfg(windows)]
-    {
-        // All tools use trampoline .exe files on Windows
-        format!("{tool}.exe")
-    }
-
-    #[cfg(not(windows))]
-    {
-        tool.to_string()
-    }
+    tool.to_string()
 }
 
 /// Create a Unix shim using symlink to ../current/bin/vp.
 ///
 /// Symlinks preserve argv[0], allowing the vp binary to detect which tool
 /// was invoked. This is the same pattern used by Volta.
-#[cfg(unix)]
 async fn create_unix_shim(
     _source: &std::path::Path,
     shim_path: &vite_path::AbsolutePath,
@@ -244,32 +177,6 @@ async fn create_unix_shim(
     // Create symlink to ../current/bin/vp (relative path)
     tokio::fs::symlink("../current/bin/vp", shim_path).await?;
     tracing::debug!("Created symlink shim at {:?} -> ../current/bin/vp", shim_path);
-
-    Ok(())
-}
-
-/// Create Windows shims using trampoline `.exe` files.
-///
-/// Each tool gets a copy of the trampoline binary renamed to `<tool>.exe`.
-/// The trampoline detects its tool name from its own filename and spawns
-/// vp.exe with `VITE_PLUS_SHIM_TOOL` set, avoiding the "Terminate batch job?"
-/// prompt that `.cmd` wrappers cause on Ctrl+C.
-///
-/// See: <https://github.com/voidzero-dev/vite-plus/issues/835>
-#[cfg(windows)]
-async fn create_windows_shim(
-    _source: &std::path::Path,
-    bin_dir: &vite_path::AbsolutePath,
-    tool: &str,
-) -> Result<(), Error> {
-    let trampoline_src = get_trampoline_path()?;
-    let shim_path = bin_dir.join(format!("{tool}.exe"));
-    tokio::fs::copy(trampoline_src.as_path(), &shim_path).await?;
-
-    // Clean up legacy .cmd and shell script wrappers from previous versions
-    cleanup_legacy_windows_shim(bin_dir, tool).await;
-
-    tracing::debug!("Created trampoline shim {:?}", shim_path);
 
     Ok(())
 }
@@ -305,105 +212,6 @@ async fn generate_completion_scripts(
     tracing::debug!("Generated completion scripts in {:?}", completion_dir);
 
     Ok(())
-}
-
-/// Get the path to the trampoline template binary (vp-shim.exe).
-///
-/// The trampoline binary is distributed alongside vp.exe in the same directory.
-/// In tests, `VITE_PLUS_TRAMPOLINE_PATH` can override the resolved path.
-#[cfg(windows)]
-pub(crate) fn get_trampoline_path() -> Result<vite_path::AbsolutePathBuf, Error> {
-    // Allow tests to override the trampoline path
-    if let Ok(override_path) = std::env::var(vite_shared::env_vars::VITE_PLUS_TRAMPOLINE_PATH) {
-        let path = std::path::PathBuf::from(override_path);
-        if path.exists() {
-            return vite_path::AbsolutePathBuf::new(path)
-                .ok_or_else(|| Error::ConfigError("Invalid trampoline override path".into()));
-        }
-    }
-
-    let current_exe = std::env::current_exe()
-        .map_err(|e| Error::ConfigError(format!("Cannot find current executable: {e}").into()))?;
-    let bin_dir = current_exe
-        .parent()
-        .ok_or_else(|| Error::ConfigError("Cannot find parent directory of vp.exe".into()))?;
-    let trampoline = bin_dir.join("vp-shim.exe");
-
-    if !trampoline.exists() {
-        return Err(Error::ConfigError(
-            format!(
-                "Trampoline binary not found at {}. Re-install vite-plus to fix this.",
-                trampoline.display()
-            )
-            .into(),
-        ));
-    }
-
-    vite_path::AbsolutePathBuf::new(trampoline)
-        .ok_or_else(|| Error::ConfigError("Invalid trampoline path".into()))
-}
-
-/// Rename an existing `.exe` to a timestamped `.old` file instead of deleting.
-///
-/// On Windows, running `.exe` files can't be deleted or overwritten, but they can
-/// be renamed. The `.old` files are cleaned up by `cleanup_old_files()`.
-#[cfg(windows)]
-async fn rename_to_old(path: &vite_path::AbsolutePath) {
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    if let Some(name) = path.as_path().file_name().and_then(|n| n.to_str()) {
-        let old_name = format!("{name}.{timestamp}.old");
-        let old_path = path.as_path().with_file_name(&old_name);
-        if let Err(e) = tokio::fs::rename(path, &old_path).await {
-            tracing::warn!("Failed to rename {} to {}: {}", name, old_name, e);
-        }
-    }
-}
-
-/// Best-effort cleanup of accumulated `.old` files from previous rename-before-copy operations.
-///
-/// When refreshing `bin/vp.exe` on Windows, the running trampoline is renamed to a
-/// timestamped `.old` file. This function tries to delete all such files. Files still
-/// in use by a running process will silently fail to delete and be cleaned up next time.
-#[cfg(windows)]
-async fn cleanup_old_files(bin_dir: &vite_path::AbsolutePath) {
-    let Ok(mut entries) = tokio::fs::read_dir(bin_dir).await else {
-        return;
-    };
-    while let Ok(Some(entry)) = entries.next_entry().await {
-        let file_name = entry.file_name();
-        let name = file_name.to_string_lossy();
-        if name.ends_with(".old") {
-            let _ = tokio::fs::remove_file(entry.path()).await;
-        }
-    }
-}
-
-/// Remove legacy `.cmd` and shell script wrappers from previous versions.
-#[cfg(windows)]
-pub(crate) async fn cleanup_legacy_windows_shim(bin_dir: &vite_path::AbsolutePath, tool: &str) {
-    // Remove old .cmd wrapper (best-effort, ignore NotFound)
-    let cmd_path = bin_dir.join(format!("{tool}.cmd"));
-    let _ = tokio::fs::remove_file(&cmd_path).await;
-
-    // Remove old shell script wrapper (extensionless, for Git Bash)
-    // Only remove if it starts with #!/bin/sh (not a binary or other file)
-    // Read only the first 9 bytes to avoid loading large files into memory
-    let sh_path = bin_dir.join(tool);
-    let is_shell_script = async {
-        use tokio::io::AsyncReadExt;
-        let mut file = tokio::fs::File::open(&sh_path).await.ok()?;
-        let mut buf = [0u8; 9]; // b"#!/bin/sh".len()
-        let n = file.read(&mut buf).await.ok()?;
-        Some(buf[..n].starts_with(b"#!/bin/sh"))
-        // file handle dropped here before remove_file
-    }
-    .await;
-    if is_shell_script == Some(true) {
-        let _ = tokio::fs::remove_file(&sh_path).await;
-    }
 }
 
 /// Create env files with PATH guard (prevents duplicate PATH entries).
@@ -618,22 +426,7 @@ fn print_path_instructions(bin_dir: &vite_path::AbsolutePath) {
     println!("  . \"{home_path}/env.ps1\"");
     println!();
     println!("  For IDE support (VS Code, Cursor), ensure bin directory is in system PATH:");
-
-    #[cfg(target_os = "macos")]
-    {
-        println!("  - macOS: Add to ~/.profile or use launchd");
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        println!("  - Linux: Add to ~/.profile for display manager integration");
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        println!("  - Windows: System Properties -> Environment Variables -> Path");
-    }
-
+    println!("  - Linux: Add to ~/.profile for display manager integration");
     println!();
     println!(
         "  Restart your terminal and IDE, then run {} to verify.",

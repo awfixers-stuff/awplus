@@ -148,10 +148,6 @@ fn is_local_path(spec: &str) -> bool {
         || spec.starts_with("./")
         || spec.starts_with("../")
         || spec.starts_with('/')
-        || (cfg!(windows)
-            && spec.len() >= 3
-            && spec.as_bytes()[1] == b':'
-            && (spec.as_bytes()[2] == b'\\' || spec.as_bytes()[2] == b'/'))
 }
 
 fn resolve_package_name(spec: &str) -> Option<String> {
@@ -225,11 +221,7 @@ fn check_npm_global_install_result(
 
     let Ok(bin_dir) = config::get_bin_dir() else { return };
 
-    // Derive bin dir from prefix (Unix: prefix/bin, Windows: prefix itself)
-    #[cfg(unix)]
     let npm_bin_dir = npm_prefix.join("bin");
-    #[cfg(windows)]
-    let npm_bin_dir = npm_prefix.to_absolute_path_buf();
 
     // If the npm global bin dir is already on the user's original PATH,
     // binaries are reachable without shims — no action needed.
@@ -261,18 +253,8 @@ fn check_npm_global_install_result(
             }
 
             // Check if binary already exists in bin_dir (vite-plus bin)
-            // On Unix: symlinks (bin/tsc)
-            // On Windows: trampoline .exe (bin/tsc.exe) or legacy .cmd (bin/tsc.cmd)
             let shim_path = bin_dir.join(&bin_name);
-            let shim_exists = std::fs::symlink_metadata(shim_path.as_path()).is_ok() || {
-                #[cfg(windows)]
-                {
-                    let exe_path = bin_dir.join(vite_str::format!("{bin_name}.exe"));
-                    std::fs::symlink_metadata(exe_path.as_path()).is_ok()
-                }
-                #[cfg(not(windows))]
-                false
-            };
+            let shim_exists = std::fs::symlink_metadata(shim_path.as_path()).is_ok();
             if shim_exists {
                 if let Ok(Some(config)) = BinConfig::load_sync(&bin_name) {
                     if config.source == BinSource::Vp {
@@ -282,10 +264,7 @@ fn check_npm_global_install_result(
                         // Link exists from a different npm package — recreate link for new owner.
                         // The old symlink points at the previous package's binary; we must
                         // replace it so it resolves to the new package's binary in npm's bin dir.
-                        #[cfg(unix)]
                         let source_path = npm_bin_dir.join(&bin_name);
-                        #[cfg(windows)]
-                        let source_path = npm_bin_dir.join(vite_str::format!("{bin_name}.cmd"));
 
                         if source_path.as_path().exists() {
                             let _ = std::fs::remove_file(shim_path.as_path());
@@ -302,20 +281,8 @@ fn check_npm_global_install_result(
                 continue;
             }
 
-            // Also check .cmd on Windows
-            #[cfg(windows)]
-            {
-                let cmd_path = bin_dir.join(format!("{bin_name}.cmd"));
-                if cmd_path.as_path().exists() {
-                    continue;
-                }
-            }
-
             // Binary source in actual npm global bin dir
-            #[cfg(unix)]
             let source_path = npm_bin_dir.join(&bin_name);
-            #[cfg(windows)]
-            let source_path = npm_bin_dir.join(format!("{bin_name}.cmd"));
 
             if source_path.as_path().exists() {
                 missing_bins.push((bin_name, source_path, package_name.clone()));
@@ -423,57 +390,21 @@ fn create_bin_link(
     package_name: &str,
     node_version: &str,
 ) {
-    let mut linked = false;
-
-    #[cfg(unix)]
-    {
-        let link_path = bin_dir.join(bin_name);
-        if std::os::unix::fs::symlink(source_path.as_path(), link_path.as_path()).is_ok() {
-            output::raw(&vite_str::format!(
-                "Linked '{bin_name}' to {}",
-                link_path.as_path().display()
-            ));
-            linked = true;
-        } else {
-            output::error(&vite_str::format!("Failed to create link for '{bin_name}'"));
-        }
-    }
-
-    #[cfg(windows)]
-    {
-        // npm-installed packages use .cmd wrappers pointing to npm's generated script.
-        // Unlike vp-installed packages, these don't have PackageMetadata, so the
-        // trampoline approach won't work (dispatch_package_binary would fail).
-        let cmd_path = bin_dir.join(vite_str::format!("{bin_name}.cmd"));
-        let wrapper_content = vite_str::format!(
-            "@echo off\r\n\"{source}\" %*\r\nexit /b %ERRORLEVEL%\r\n",
-            source = source_path.as_path().display()
-        );
-        if std::fs::write(cmd_path.as_path(), &*wrapper_content).is_ok() {
-            output::raw(&vite_str::format!(
-                "Linked '{bin_name}' to {}",
-                cmd_path.as_path().display()
-            ));
-            linked = true;
-        } else {
-            output::error(&vite_str::format!("Failed to create link for '{bin_name}'"));
-        }
-
-        // Also create shell script for Git Bash
-        let sh_path = bin_dir.join(bin_name);
-        let sh_content =
-            format!("#!/bin/sh\nexec \"{}\" \"$@\"\n", source_path.as_path().display());
-        let _ = std::fs::write(sh_path.as_path(), sh_content);
-    }
-
-    // Record the link in BinConfig so we can identify it during uninstall
-    if linked {
+    let link_path = bin_dir.join(bin_name);
+    if std::os::unix::fs::symlink(source_path.as_path(), link_path.as_path()).is_ok() {
+        output::raw(&vite_str::format!(
+            "Linked '{bin_name}' to {}",
+            link_path.as_path().display()
+        ));
+        // Record the link in BinConfig so we can identify it during uninstall
         let _ = BinConfig::new_npm(
             bin_name.to_string(),
             package_name.to_string(),
             node_version.to_string(),
         )
         .save_sync();
+    } else {
+        output::error(&vite_str::format!("Failed to create link for '{bin_name}'"));
     }
 }
 
@@ -535,24 +466,12 @@ fn remove_npm_global_uninstall_links(bin_entries: &[(String, String)], npm_prefi
 
             // Clean up the BinConfig
             let _ = BinConfig::delete_sync(bin_name);
-
-            // Also remove .cmd and .exe on Windows
-            #[cfg(windows)]
-            {
-                let cmd_path = bin_dir.join(vite_str::format!("{bin_name}.cmd"));
-                let _ = std::fs::remove_file(cmd_path.as_path());
-                let exe_path = bin_dir.join(vite_str::format!("{bin_name}.exe"));
-                let _ = std::fs::remove_file(exe_path.as_path());
-            }
         } else {
             // Owned by a different npm package — check if our link target is now broken
             // (npm may have deleted the binary from npm_bin_dir when uninstalling)
             let link_path = bin_dir.join(bin_name);
 
-            // On Unix, exists() follows the symlink — if target is gone, it returns false.
-            // On Windows, the shim files are regular files that always "exist",
-            // so we always fall through to the repair check below.
-            #[cfg(unix)]
+            // exists() follows the symlink — if target is gone, it returns false.
             if link_path.as_path().exists() {
                 // Target still accessible — nothing to repair
                 continue;
@@ -576,11 +495,6 @@ fn remove_npm_global_uninstall_links(bin_entries: &[(String, String)], npm_prefi
             let source_path = node_modules_dir.join(&bin_rel_path);
             if source_path.as_path().exists() {
                 let _ = std::fs::remove_file(link_path.as_path());
-                #[cfg(windows)]
-                {
-                    let cmd_path = bin_dir.join(vite_str::format!("{bin_name}.cmd"));
-                    let _ = std::fs::remove_file(cmd_path.as_path());
-                }
                 create_bin_link(
                     &bin_dir,
                     bin_name,
@@ -1093,9 +1007,6 @@ pub(crate) async fn ensure_installed(version: &str) -> Result<(), String> {
         .join("node")
         .join(version);
 
-    #[cfg(windows)]
-    let binary_path = home_dir.join("node.exe");
-    #[cfg(not(windows))]
     let binary_path = home_dir.join("bin").join("node");
 
     // Check if already installed
@@ -1118,15 +1029,6 @@ pub(crate) fn locate_tool(version: &str, tool: &str) -> Result<AbsolutePathBuf, 
         .join("node")
         .join(version);
 
-    #[cfg(windows)]
-    let tool_path = if tool == "node" {
-        home_dir.join("node.exe")
-    } else {
-        // npm and npx are .cmd scripts on Windows
-        home_dir.join(format!("{tool}.cmd"))
-    };
-
-    #[cfg(not(windows))]
     let tool_path = home_dir.join("bin").join(tool);
 
     if !tool_path.as_path().exists() {
@@ -1186,19 +1088,11 @@ mod tests {
     use super::*;
 
     /// Create a fake executable file in the given directory.
-    #[cfg(unix)]
     fn create_fake_executable(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
         use std::os::unix::fs::PermissionsExt;
         let path = dir.join(name);
         std::fs::write(&path, "#!/bin/sh\n").unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-        path
-    }
-
-    #[cfg(windows)]
-    fn create_fake_executable(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
-        let path = dir.join(format!("{name}.exe"));
-        std::fs::write(&path, "fake").unwrap();
         path
     }
 

@@ -20,13 +20,7 @@ runs:
     - name: Install previous release
       shell: bash
       run: |
-        if ${{ runner.os == 'Windows' }}; then
-          export TARGET="win32-x64-msvc"
-        elif ${{ runner.os == 'Linux' }}; then
-          export TARGET="linux-x64-gnu"
-        elif ${{ runner.os == 'macOS' }}; then
-          export TARGET="darwin-arm64"
-        fi
+        export TARGET="linux-x64-gnu"
 
         # Pin to the version from checked-out rolldown source to avoid mismatch
         # between JS code (built from source) and native binary (downloaded from npm).
