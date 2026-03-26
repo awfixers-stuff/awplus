@@ -1,7 +1,7 @@
 # Bun Test Runner and Bundler Removal Guide
 
-**Document Version:** 1.0  
-**Date:** 2026-03-26  
+**Document Version:** 1.0
+**Date:** 2026-03-26
 **Purpose:** Comprehensive guide for removing test runner and bundler components from Bun while preserving JavaScript runtime and package manager functionality.
 
 ---
@@ -1154,5 +1154,4 @@ The bundler may use these vendored dependencies:
 
 ---
 
-_Document generated: 2026-03-26_  
-_Maintainer: Bun Development Team_
+_Document generated: 2026-03-26_

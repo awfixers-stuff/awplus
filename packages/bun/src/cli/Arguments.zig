@@ -219,32 +219,6 @@ pub const build_only_params = [_]ParamType{
 } else .{};
 pub const build_params = build_only_params ++ transpiler_params_ ++ base_params_;
 
-// TODO: update test completions
-pub const test_only_params = [_]ParamType{
-    clap.parseParam("--timeout <NUMBER>               Set the per-test timeout in milliseconds, default is 5000.") catch unreachable,
-    clap.parseParam("-u, --update-snapshots           Update snapshot files") catch unreachable,
-    clap.parseParam("--rerun-each <NUMBER>            Re-run each test file <NUMBER> times, helps catch certain bugs") catch unreachable,
-    clap.parseParam("--retry <NUMBER>                 Default retry count for all tests, overridden by per-test { retry: N }") catch unreachable,
-    clap.parseParam("--todo                           Include tests that are marked with \"test.todo()\"") catch unreachable,
-    clap.parseParam("--only                           Run only tests that are marked with \"test.only()\" or \"describe.only()\"") catch unreachable,
-    clap.parseParam("--pass-with-no-tests             Exit with code 0 when no tests are found") catch unreachable,
-    clap.parseParam("--concurrent                     Treat all tests as `test.concurrent()` tests") catch unreachable,
-    clap.parseParam("--randomize                      Run tests in random order") catch unreachable,
-    clap.parseParam("--seed <INT>                     Set the random seed for test randomization") catch unreachable,
-    clap.parseParam("--coverage                       Generate a coverage profile") catch unreachable,
-    clap.parseParam("--coverage-reporter <STR>...     Report coverage in 'text' and/or 'lcov'. Defaults to 'text'.") catch unreachable,
-    clap.parseParam("--coverage-dir <STR>             Directory for coverage files. Defaults to 'coverage'.") catch unreachable,
-    clap.parseParam("--bail <NUMBER>?                 Exit the test suite after <NUMBER> failures. If you do not specify a number, it defaults to 1.") catch unreachable,
-    clap.parseParam("-t, --test-name-pattern/--grep <STR>    Run only tests with a name that matches the given regex.") catch unreachable,
-    clap.parseParam("--reporter <STR>                 Test output reporter format. Available: 'junit' (requires --reporter-outfile), 'dots'. Default: console output.") catch unreachable,
-    clap.parseParam("--reporter-outfile <STR>         Output file path for the reporter format (required with --reporter).") catch unreachable,
-    clap.parseParam("--dots                           Enable dots reporter. Shorthand for --reporter=dots.") catch unreachable,
-    clap.parseParam("--only-failures                  Only display test failures, hiding passing tests.") catch unreachable,
-    clap.parseParam("--max-concurrency <NUMBER>        Maximum number of concurrent tests to execute at once. Default is 20.") catch unreachable,
-    clap.parseParam("--path-ignore-patterns <STR>...   Glob patterns for test file paths to ignore.") catch unreachable,
-};
-pub const test_params = test_only_params ++ runtime_params_ ++ transpiler_params_ ++ base_params_;
-
 fn loadGlobalBunfig(allocator: std.mem.Allocator, ctx: Command.Context, comptime cmd: Command.Tag) !void {
     if (ctx.has_loaded_global_config) return;
 

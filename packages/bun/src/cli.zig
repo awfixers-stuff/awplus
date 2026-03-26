@@ -166,7 +166,7 @@ pub const HelpCommand = struct {
         \\<b>Commands:<r>
         \\  <b><magenta>run<r>       <d>./my-script.ts<r>       Execute a file with Bun
         \\            <d>lint<r>                 Run a package.json script
-        \\  <b><magenta>test<r>                           Run unit tests with Bun
+
         \\  <b><magenta>x<r>         <d>{s:<16}<r>     Execute a package binary (CLI), installing if needed <d>(bunx)<r>
         \\  <b><magenta>repl<r>                           Start a REPL session with Bun
         \\  <b><magenta>exec<r>                           Run a shell script directly with Bun
@@ -250,7 +250,7 @@ pub const HelpCommand = struct {
 
                     const flags = Arguments.runtime_params_ ++ Arguments.auto_only_params ++ Arguments.base_params_;
                     clap.simpleHelpBunTopLevel(comptime &flags);
-                    Output.pretty("\n\n(more flags in <b>bun install --help<r>, <b>bun test --help<r>, and <b>bun build --help<r>)\n", .{});
+                    Output.pretty("\n\n(more flags in <b>bun install --help<r> and <b>bun build --help<r>)\n", .{});
                 }
                 Output.pretty(cli_helptext_footer, .{});
             },
@@ -351,7 +351,10 @@ pub const Command = struct {
         seed: ?u32 = null,
         concurrent_test_glob: ?[]const []const u8 = null,
         bail: u32 = 0,
-        coverage: TestCommand.CodeCoverageOptions = .{},
+        coverage: struct {
+            enabled: bool = false,
+            exclude_patterns: []const []const u8 = &.{},
+        } = .{},
         path_ignore_patterns: []const []const u8 = &.{},
         path_ignore_patterns_from_cli: bool = false,
         test_filter_pattern: ?[]const u8 = null,
@@ -610,8 +613,6 @@ pub const Command = struct {
             RootCommandMatcher.case("ci") => .InstallCommand,
             RootCommandMatcher.case("c"), RootCommandMatcher.case("create") => .CreateCommand,
 
-            RootCommandMatcher.case("test") => .TestCommand,
-
             RootCommandMatcher.case("pm") => .PackageManagerCommand,
 
             RootCommandMatcher.case("add"), RootCommandMatcher.case("a") => .AddCommand,
@@ -674,7 +675,6 @@ pub const Command = struct {
         "bun",
         "upgrade",
         "discord",
-        "test",
         "pm",
         "x",
         "repl",
@@ -876,12 +876,6 @@ pub const Command = struct {
                 try PackageManagerCommand.exec(ctx);
                 return;
             },
-            .TestCommand => {
-                const ctx = try Command.init(allocator, log, .TestCommand);
-
-                try TestCommand.exec(ctx);
-                return;
-            },
             .GetCompletionsCommand => {
                 try @"bun getcompletes"(allocator, log);
                 return;
@@ -1019,7 +1013,6 @@ pub const Command = struct {
         RemoveCommand,
         RunCommand,
         RunAsNodeCommand, // arg0 == 'node'
-        TestCommand,
         UnlinkCommand,
         UpdateCommand,
         UpgradeCommand,
@@ -1057,7 +1050,6 @@ pub const Command = struct {
                 .RemoveCommand => 'R',
                 .RunCommand => 'r',
                 .RunAsNodeCommand => 'n',
-                .TestCommand => 't',
                 .UnlinkCommand => 'U',
                 .UpdateCommand => 'u',
                 .UpgradeCommand => 'p',
@@ -1080,7 +1072,6 @@ pub const Command = struct {
                 .AutoCommand => Arguments.auto_params,
                 .RunCommand, .RunAsNodeCommand => Arguments.run_params,
                 .BuildCommand => Arguments.build_params,
-                .TestCommand => Arguments.test_params,
                 .BunxCommand => Arguments.run_params,
                 else => Arguments.base_params_ ++ Arguments.runtime_params_ ++ Arguments.transpiler_params_,
             };
@@ -1190,35 +1181,6 @@ pub const Command = struct {
                     Output.flush();
                     clap.simpleHelp(&Arguments.build_only_params);
                     Output.pretty("\n\n" ++ outro_text, .{});
-                    Output.flush();
-                },
-                Command.Tag.TestCommand => {
-                    const intro_text =
-                        \\<b>Usage<r>: <b><green>bun test<r> <cyan>[flags]<r> <blue>[\<patterns\>]<r>
-                        \\  Run all matching test files and print the results to stdout
-                    ;
-                    const outro_text =
-                        \\<b>Examples:<r>
-                        \\  <d>Run all test files<r>
-                        \\  <b><green>bun test<r>
-                        \\
-                        \\  <d>Run all test files with "foo" or "bar" in the file name<r>
-                        \\  <b><green>bun test<r> <blue>foo bar<r>
-                        \\
-                        \\  <d>Run all test files, only including tests whose names includes "baz"<r>
-                        \\  <b><green>bun test<r> <cyan>--test-name-pattern<r> <blue>baz<r>
-                        \\
-                        \\Full documentation is available at <magenta>https://bun.com/docs/cli/test<r>
-                        \\
-                    ;
-
-                    Output.pretty(intro_text, .{});
-                    Output.flush();
-                    Output.pretty("\n\n<b>Flags:<r>", .{});
-                    Output.flush();
-                    clap.simpleHelp(&Arguments.test_only_params);
-                    Output.pretty("\n\n", .{});
-                    Output.pretty(outro_text, .{});
                     Output.flush();
                 },
                 Command.Tag.CreateCommand => {
@@ -1430,7 +1392,6 @@ pub const Command = struct {
 
         pub const loads_config: std.EnumArray(Tag, bool) = std.EnumArray(Tag, bool).initDefault(false, .{
             .BuildCommand = true,
-            .TestCommand = true,
             .InstallCommand = true,
             .AddCommand = true,
             .RemoveCommand = true,
@@ -1450,7 +1411,6 @@ pub const Command = struct {
 
         pub const always_loads_config: std.EnumArray(Tag, bool) = std.EnumArray(Tag, bool).initDefault(false, .{
             .BuildCommand = true,
-            .TestCommand = true,
             .InstallCommand = true,
             .AddCommand = true,
             .RemoveCommand = true,
@@ -1791,7 +1751,6 @@ const Bunfig = @import("./bunfig.zig").Bunfig;
 const ColonListType = @import("./cli/colon_list_type.zig").ColonListType;
 const MacroMap = @import("./resolver/package_json.zig").MacroMap;
 const RunCommand_ = @import("./cli/run_command.zig").RunCommand;
-const TestCommand = @import("./cli/test_command.zig").TestCommand;
 
 const Install = @import("./install/install.zig");
 const PackageManager = Install.PackageManager;
