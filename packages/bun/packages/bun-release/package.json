@@ -3,9 +3,9 @@
   "private": true,
   "dependencies": {
     "aws4fetch": "^1.0.17",
-    "esbuild": "^0.17.3",
+    "esbuild": "^0.27.4",
     "jszip": "^3.10.1",
-    "octokit": "^2.0.14"
+    "octokit": "^5.0.5"
   },
   "devDependencies": {
     "@octokit/types": "^8.1.1",
