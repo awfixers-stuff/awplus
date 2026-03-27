@@ -16,8 +16,8 @@ pub(crate) use cache::invalidate_cache;
 pub use dispatch::dispatch;
 use vite_shared::env_vars;
 
-/// Core shim tools (node, npm, npx)
-pub const CORE_SHIM_TOOLS: &[&str] = &["node", "npm", "npx"];
+/// Core shim tools (node, npm, npx, bun, bunx)
+pub const CORE_SHIM_TOOLS: &[&str] = &["node", "npm", "npx", "bun", "bunx"];
 
 /// Extract the tool name from argv[0].
 ///
@@ -175,6 +175,8 @@ mod tests {
         assert!(is_core_shim_tool("node"));
         assert!(is_core_shim_tool("npm"));
         assert!(is_core_shim_tool("npx"));
+        assert!(is_core_shim_tool("bun"));
+        assert!(is_core_shim_tool("bunx"));
         assert!(!is_core_shim_tool("yarn")); // yarn is not a core shim tool
         assert!(!is_core_shim_tool("vp"));
         assert!(!is_core_shim_tool("cargo"));
@@ -184,6 +186,8 @@ mod tests {
         assert!(is_shim_tool("node"));
         assert!(is_shim_tool("npm"));
         assert!(is_shim_tool("npx"));
+        assert!(is_shim_tool("bun"));
+        assert!(is_shim_tool("bunx"));
         assert!(!is_shim_tool("vp")); // vp is never a shim
     }
 

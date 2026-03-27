@@ -517,7 +517,11 @@ pub enum Commands {
     },
 
     /// Forward a command to the package manager
+    ///
+    /// DEPRECATED: Use bun directly instead (bun install, bun add, bunx, etc.)
+    /// See docs/guide/bun-integration.md for details.
     #[command(subcommand)]
+    #[deprecated(since = "0.0.0", note = "Use bun directly instead - see docs/guide/bun-integration.md")]
     Pm(PmCommands),
 
     // =========================================================================
@@ -718,7 +722,11 @@ Related Commands:
   vp install -g <package>       # Install a package globally
   vp uninstall -g <package>     # Uninstall a package globally
   vp update -g [package]        # Update global packages
-  vp list -g [package]          # List global packages")]
+  vp list -g [package]          # List global packages
+
+Note:
+  Bun (bun, bunx) shims are also supported. Run 'bun' or 'bunx' directly
+  to use the system bun. Bun runtime management is coming soon.")]
 pub struct EnvArgs {
     /// Subcommand (e.g., 'default', 'setup', 'doctor', 'which')
     #[command(subcommand)]
@@ -726,6 +734,9 @@ pub struct EnvArgs {
 }
 
 /// Subcommands for the `env` command
+///
+/// Note: Some commands are Node.js-specific and will be deprecated when Bun
+/// runtime management is enabled. See docs/guide/bun-integration.md for details.
 #[derive(clap::Subcommand, Debug)]
 pub enum EnvSubcommands {
     /// Show current environment information
@@ -739,6 +750,9 @@ pub enum EnvSubcommands {
     Print,
 
     /// Set or show the global default Node.js version
+    ///
+    /// DEPRECATED: Will be replaced with unified runtime management
+    #[deprecated(since = "0.0.0", note = "Node.js specific - will be replaced with unified runtime management")]
     Default {
         /// Version to set as default (e.g., "20.18.0", "lts", "latest")
         /// If not provided, shows the current default
@@ -746,12 +760,21 @@ pub enum EnvSubcommands {
     },
 
     /// Enable managed mode - shims always use vite-plus managed Node.js
+    ///
+    /// DEPRECATED: Will be replaced with unified runtime management
+    #[deprecated(since = "0.0.0", note = "Node.js specific - will be replaced with unified runtime management")]
     On,
 
     /// Enable system-first mode - shims prefer system Node.js, fallback to managed
+    ///
+    /// DEPRECATED: Will be replaced with unified runtime management
+    #[deprecated(since = "0.0.0", note = "Node.js specific - will be replaced with unified runtime management")]
     Off,
 
     /// Create or update shims in VITE_PLUS_HOME/bin
+    ///
+    /// DEPRECATED: Will be replaced with unified runtime management
+    #[deprecated(since = "0.0.0", note = "Node.js specific - will be replaced with unified runtime management")]
     Setup {
         /// Force refresh shims even if they exist
         #[arg(long)]
@@ -766,11 +789,14 @@ pub enum EnvSubcommands {
 
     /// Show path to the tool that would be executed
     Which {
-        /// Tool name (node, npm, or npx)
+        /// Tool name (node, npm, npx, bun, or bunx)
         tool: String,
     },
 
     /// Pin a Node.js version in the current directory (creates .node-version)
+    ///
+    /// DEPRECATED: Will be replaced with unified runtime management
+    #[deprecated(since = "0.0.0", note = "Node.js specific - will be replaced with unified runtime management")]
     Pin {
         /// Version to pin (e.g., "20.18.0", "lts", "latest", "^20.0.0")
         /// If not provided, shows the current pinned version
@@ -790,10 +816,16 @@ pub enum EnvSubcommands {
     },
 
     /// Remove the .node-version file from current directory (alias for `pin --unpin`)
+    ///
+    /// DEPRECATED: Will be replaced with unified runtime management
+    #[deprecated(since = "0.0.0", note = "Node.js specific - will be replaced with unified runtime management")]
     Unpin,
 
     /// List locally installed Node.js versions
+    ///
+    /// DEPRECATED: Will be replaced with unified runtime management
     #[command(visible_alias = "ls")]
+    #[deprecated(since = "0.0.0", note = "Node.js specific - will be replaced with unified runtime management")]
     List {
         /// Output as JSON
         #[arg(long)]
@@ -801,7 +833,10 @@ pub enum EnvSubcommands {
     },
 
     /// List available Node.js versions from the registry
+    ///
+    /// DEPRECATED: Will be replaced with unified runtime management
     #[command(name = "list-remote", visible_alias = "ls-remote")]
+    #[deprecated(since = "0.0.0", note = "Node.js specific - will be replaced with unified runtime management")]
     ListRemote {
         /// Filter versions by pattern (e.g., "20" for 20.x versions)
         pattern: Option<String>,
@@ -824,7 +859,10 @@ pub enum EnvSubcommands {
     },
 
     /// Execute a command with a specific Node.js version
+    ///
+    /// DEPRECATED: Will be replaced with unified runtime management
     #[command(visible_alias = "run")]
+    #[deprecated(since = "0.0.0", note = "Node.js specific - will be replaced with unified runtime management")]
     Exec {
         /// Node.js version to use (e.g., "20.18.0", "lts", "^20.0.0")
         /// If not provided and command is node/npm/npx or a global package binary,
@@ -842,7 +880,10 @@ pub enum EnvSubcommands {
     },
 
     /// Uninstall a Node.js version
+    ///
+    /// DEPRECATED: Will be replaced with unified runtime management
     #[command(visible_alias = "uni")]
+    #[deprecated(since = "0.0.0", note = "Node.js specific - will be replaced with unified runtime management")]
     Uninstall {
         /// Version to uninstall (e.g., "20.18.0")
         #[arg(required = true)]
@@ -850,7 +891,10 @@ pub enum EnvSubcommands {
     },
 
     /// Install a Node.js version
+    ///
+    /// DEPRECATED: Will be replaced with unified runtime management
     #[command(visible_alias = "i")]
+    #[deprecated(since = "0.0.0", note = "Node.js specific - will be replaced with unified runtime management")]
     Install {
         /// Version to install (e.g., "20", "20.18.0", "lts", "latest")
         /// If not provided, installs the version from .node-version or package.json
@@ -858,6 +902,9 @@ pub enum EnvSubcommands {
     },
 
     /// Use a specific Node.js version for this shell session
+    ///
+    /// DEPRECATED: Will be replaced with unified runtime management
+    #[deprecated(since = "0.0.0", note = "Node.js specific - will be replaced with unified runtime management")]
     Use {
         /// Version to use (e.g., "20", "20.18.0", "lts", "latest")
         /// If not provided, reads from .node-version or package.json

@@ -3,6 +3,17 @@
 //! This module handles the `pm` subcommand and the `info` command which are
 //! routed through helper functions. Other PM commands (add, install, remove, etc.)
 //! are implemented as separate command modules with struct-based patterns.
+//!
+//! ## Deprecation Notice
+//!
+//! The `vp pm` command is deprecated in favor of Bun's all-in-one package manager.
+//! When Bun runtime management is enabled, you can use `bun` directly for:
+//! - `bun install` (equivalent to `vp install`)
+//! - `bun add` (equivalent to `vp add`)
+//! - `bun remove` (equivalent to `vp remove`)
+//! - `bunx` (equivalent to `vp dlx`)
+//!
+//! See docs/guide/bun-integration.md for details.
 
 use std::process::ExitStatus;
 

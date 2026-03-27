@@ -13,6 +13,7 @@ mod commands;
 mod error;
 mod help;
 mod js_executor;
+mod runtime;
 mod shim;
 mod tips;
 

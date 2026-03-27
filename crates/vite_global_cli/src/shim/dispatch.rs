@@ -33,6 +33,13 @@ fn is_package_manager_tool(tool: &str) -> bool {
     PACKAGE_MANAGER_TOOLS.contains(&tool)
 }
 
+/// Bun runtime tools (bun, bunx)
+const BUN_TOOLS: &[&str] = &["bun", "bunx"];
+
+fn is_bun_tool(tool: &str) -> bool {
+    BUN_TOOLS.contains(&tool)
+}
+
 /// Parsed npm global command (install or uninstall).
 struct NpmGlobalCommand {
     /// Package names/specs extracted from args (e.g., ["codex", "typescript@5"])
@@ -629,9 +636,17 @@ pub async fn dispatch(tool: &str, args: &[String]) -> i32 {
         // Fall through to managed if system not found
     }
 
-    // Check if this is a package binary (not node/npm/npx)
+    // Check if this is a package binary (not node/npm/npx/bun/bunx)
     if !is_core_shim_tool(tool) {
         return dispatch_package_binary(tool, args).await;
+    }
+
+    // Handle bun tools - passthrough to system bun for now
+    // TODO: When bun runtime management is ready, implement proper version resolution
+    // See docs/bun-integration.md for the planned runtime trait implementation
+    if is_bun_tool(tool) {
+        tracing::debug!("bun tool detected, passthrough to system bun");
+        return passthrough_to_system(tool, args);
     }
 
     // Get current working directory
