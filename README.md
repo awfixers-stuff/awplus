@@ -15,6 +15,10 @@ Registry locking is planned: projects will be able to lock to a tightly curated 
 
 This directly addresses well-known supply-chain attacks such as the [SolarWinds Hack] and the more recent [LiteLLM Hack].
 
+**Experimental support for WebScript** — a self-contained first-party language modeled after TypeScript — is planned for the first release of Weblang. WebScript will allow developers to write code without pulling in external language toolchains or heavy dependency graphs.
+
+This effort is part of a broader strategy to eliminate reliance on fragile third-party supply chains. By containing all language tooling, runtime, and package management inside one well-maintained, well-funded repository backed by an institution committed to long-term quality and security, Weblang aims to deliver a more trustworthy and self-contained development environment.
+
 ## Credits
 
 - Original inspiration and ecosystem direction drawn from the [VoidZero] / [Vite+] work.
