@@ -1,37 +1,33 @@
 [vite+]: https://viteplus.dev
-[voidzero]: https://voidzero.dev
-[bun]: https://bun.com
 [anthropic]: https://anthropic.com
 [solarwinds Hack]: https://www.youtube.com/watch?v=Eq6ATHhBezw
 [LiteLLM Hack]: https://snyk.io/articles/poisoned-security-scanner-backdooring-litellm/
 [@awfixer]: https://github.com/awfixer
+[VoidZero]: https://voidzero.dev
 
-I am a horribly, horribly opinionated person who very rarely acts in a way that is not to furthure my own goals, wants and needs.
+## What is Weblang?
 
-This project is not any different.
+Weblang is a security-first fork of [vite+] that eliminates the default yarn/pnpm/Node.js toolchain in favor of a hardened, minimal runtime.
 
-> [!NOTE]
-> I would be open to working with the [voidzero] team on this project, though due to the fact that [bun] has been purchased by [anthropic] I would be unlikely to be open to working with the bun team on this. Nothing against the bun team, just a value I do not intend to comprimise right now.
+It replaces insecure ecosystem dependencies with a modified Bun-based runtime and package manager (with linking support coming soon). The goal is to sharply reduce cascading supply-chain risks that have repeatedly compromised major projects.
 
+Registry locking is planned: projects will be able to lock to a tightly curated registry, ensuring only vetted packages can be installed or updated — even when agents are used for development or maintenance.
 
-Essentially, I agree with the movement that the [voidzero] team was making with [vite+] and the general noise that they make is not something I find entirely disagreeable.
+This directly addresses well-known supply-chain attacks such as the [SolarWinds Hack] and the more recent [LiteLLM Hack].
 
-The issue is that ecosystems are by nature insecure and create many cascading points of failure that nobody ever fully accounts for. See the [solarwinds Hack] and the recent [LiteLLM Hack]
+## Credits
 
-that is what I intend to fix with awplus, as well as a handful of other projects that I have been working on.
+- Original inspiration and ecosystem direction drawn from the [VoidZero] / [Vite+] work.
+- Modified Bun runtime and package manager (Bun itself was later acquired by [Anthropic]).
 
-## What is AWPlus?
+## Contributing
 
-awplus is a fork of [vite+] that removes the yarn/pnpm/node setup they have an rather embraces the broader [voidzero] ecosystem and has a modified version of bun powering the runtime and package manager commands.
+Other developers are already assisting. If you would like to contribute, apply to join the Discord server. We will evaluate your background and what you bring to the project.
 
-linking will be added to the modifed bun package manager over the next few weeks.
+## Background
 
-What is also planned in registry locking. You will be able to lock the project to a registry that I will maintain so that only a set of currated packages is ever availible for download, furthure reducing attack surface when using agents to update, develop or maintain these projects.
-
-There are other developers helping with this, though if you would like to contribute please apply to join my [Discord] and we will evaluate what you have to offer.
+I design systems with a deep awareness of how nation-state actors, Advanced Persistent Threats, and access brokers compromise infrastructure. Weblang is built to raise the bar in an AI-accelerated threat landscape.
 
 Cheers.
 
 - [@awfixer]
-
-if you want to know my history, then dont ask because its classified, but suffice to say I am well aware of the various things that can be used by nation state actors, Advanced Persistant Threats, and the occasional lucky access broker when it comes to getting into various peoples computers and the related systems, accounts and lives. I have been designing these things to help prevent that even as we move into an AI accelerated threat landscape.
