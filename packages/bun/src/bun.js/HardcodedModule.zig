@@ -361,13 +361,11 @@ pub const HardcodedModule = enum {
 
         const bun_extra_alias_kvs = [_]struct { string, Alias }{
             .{ "bun", .{ .path = "bun", .tag = .bun } },
-            .{ "bun:test", .{ .path = "bun:test" } },
             .{ "bun:app", .{ .path = "bun:app" } },
             .{ "bun:ffi", .{ .path = "bun:ffi" } },
             .{ "bun:jsc", .{ .path = "bun:jsc" } },
             .{ "bun:sqlite", .{ .path = "bun:sqlite" } },
             .{ "bun:wrap", .{ .path = "bun:wrap" } },
-            .{ "bun:internal-for-testing", .{ .path = "bun:internal-for-testing" } },
             .{ "ffi", .{ .path = "bun:ffi" } },
 
             // Thirdparty packages we override
@@ -389,27 +387,17 @@ pub const HardcodedModule = enum {
             .{ "next/dist/compiled/undici", .{ .path = "undici" } },
         };
 
-        const bun_test_extra_alias_kvs = [_]struct { string, Alias }{
-            .{ "@jest/globals", .{ .path = "bun:test" } },
-            .{ "vitest", .{ .path = "bun:test" } },
-        };
-
         const node_aliases = bun.ComptimeStringMap(Alias, common_alias_kvs);
         pub const bun_aliases = bun.ComptimeStringMap(Alias, common_alias_kvs ++ bun_extra_alias_kvs);
-        const bun_test_aliases = bun.ComptimeStringMap(Alias, common_alias_kvs ++ bun_extra_alias_kvs ++ bun_test_extra_alias_kvs);
 
-        const Cfg = struct { rewrite_jest_for_tests: bool = false };
+        const Cfg = struct {};
         pub fn has(name: []const u8, target: options.Target, cfg: Cfg) bool {
             return get(name, target, cfg) != null;
         }
 
-        pub fn get(name: []const u8, target: options.Target, cfg: Cfg) ?Alias {
+        pub fn get(name: []const u8, target: options.Target, _: Cfg) ?Alias {
             if (target.isBun()) {
-                if (cfg.rewrite_jest_for_tests) {
-                    return bun_test_aliases.get(name);
-                } else {
-                    return bun_aliases.get(name);
-                }
+                return bun_aliases.get(name);
             } else if (target.isNode()) {
                 return node_aliases.get(name);
             }

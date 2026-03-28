@@ -457,7 +457,6 @@ export fn getTests(opts_array: u64) u64 {
             u8,
         ).init(allocator),
     };
-    parser.options.features.inject_jest_globals = true;
     parser.options.features.commonjs_at_runtime = true;
     parser.options.features.top_level_await = true;
 

@@ -160,8 +160,6 @@ pub const Runtime = struct {
         allow_runtime: bool = true,
         inlining: bool = false,
 
-        inject_jest_globals: bool = false,
-
         no_macros: bool = false,
 
         commonjs_named_exports: bool = true,
@@ -265,8 +263,6 @@ pub const Runtime = struct {
             .standard_decorators,
             .lower_using,
             .repl_mode,
-
-            // note that we do not include .inject_jest_globals, as we bail out of the cache entirely if this is true
         };
 
         pub fn hashForRuntimeTranspiler(this: *const Features, hasher: *std.hash.Wyhash) void {

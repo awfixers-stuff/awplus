@@ -116,11 +116,27 @@ pub const Formatter = ConsoleObject.Formatter;
 
 pub const hot_reloader = @import("./hot_reloader.zig");
 
-// TODO: move into bun.api
-pub const Jest = @import("./test/jest.zig");
-pub const TestScope = @import("./test/jest.zig").TestScope;
-pub const Expect = @import("./test/expect.zig");
-pub const Snapshot = @import("./test/snapshot.zig");
+pub const Jest = opaque {};
+pub const TestScope = opaque {};
+pub const Expect = opaque {};
+pub const Snapshot = opaque {};
+
+pub const bun_test = struct {
+    pub const BunTest = opaque {};
+    pub const FakeTimers = struct {
+        pub const current_time: CurrentTime = .{};
+        pub const timerFnsCount = 0;
+        pub const CurrentTime = struct {
+            pub fn getTimespecNow(_: @This()) ?bun.timespec {
+                return null;
+            }
+        };
+        pub fn isActive(_: @This()) bool {
+            return false;
+        }
+        pub fn putTimersFns(_: *jsc.JSGlobalObject, _: jsc.JSValue, _: jsc.JSValue) void {}
+    };
+};
 
 pub const js_property_iterator = @import("./bindings/JSPropertyIterator.zig");
 pub const JSPropertyIterator = js_property_iterator.JSPropertyIterator;

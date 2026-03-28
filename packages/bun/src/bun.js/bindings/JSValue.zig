@@ -559,26 +559,6 @@ pub const JSValue = enum(i64) {
         return bun.jsc.fromJSHostCall(globalObject, @src(), JSBuffer__bufferFromLength, .{ globalObject, @intCast(len) });
     }
 
-    pub fn jestSnapshotPrettyFormat(this: JSValue, out: *std.Io.Writer, globalObject: *JSGlobalObject) !void {
-        const fmt_options = JestPrettyFormat.FormatOptions{
-            .enable_colors = false,
-            .add_newline = false,
-            .flush = false,
-            .quote_strings = true,
-        };
-
-        try JestPrettyFormat.format(
-            .Debug,
-            globalObject,
-            @as([*]const JSValue, @ptrCast(&this)),
-            1,
-            out,
-            fmt_options,
-        );
-
-        try out.flush();
-    }
-
     extern fn JSBuffer__bufferFromLength(*JSGlobalObject, i64) JSValue;
 
     /// Must come from globally-allocated memory if allocator is not null
@@ -2418,7 +2398,6 @@ const string = []const u8;
 
 const FFI = @import("./FFI.zig");
 const std = @import("std");
-const JestPrettyFormat = @import("../test/pretty_format.zig").JestPrettyFormat;
 
 const bun = @import("bun");
 const Environment = bun.Environment;

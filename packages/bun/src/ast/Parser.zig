@@ -1220,130 +1220,6 @@ pub const Parser = struct {
             exports_kind = .esm_with_dynamic_fallback_from_cjs;
         }
 
-        // Auto inject jest globals into the test file
-        if (p.options.features.inject_jest_globals) outer: {
-            var jest: *Jest = &p.jest;
-
-            for (p.import_records.items) |*item| {
-                // skip if they did import it
-                if (strings.eqlComptime(item.path.text, "bun:test") or strings.eqlComptime(item.path.text, "@jest/globals") or strings.eqlComptime(item.path.text, "vitest")) {
-                    if (p.options.features.runtime_transpiler_cache) |cache| {
-                        // If we rewrote import paths, we need to disable the runtime transpiler cache
-                        if (!strings.eqlComptime(item.path.text, "bun:test")) {
-                            cache.input_hash = null;
-                        }
-                    }
-
-                    break :outer;
-                }
-            }
-
-            // if they didn't use any of the jest globals, don't inject it, I guess.
-            const items_count = brk: {
-                var count: usize = 0;
-                inline for (comptime std.meta.fieldNames(Jest)) |symbol_name| {
-                    count += @intFromBool(p.symbols.items[@field(jest, symbol_name).innerIndex()].use_count_estimate > 0);
-                }
-
-                break :brk count;
-            };
-            if (items_count == 0)
-                break :outer;
-
-            var declared_symbols = js_ast.DeclaredSymbol.List{};
-            try declared_symbols.ensureTotalCapacity(p.allocator, items_count);
-
-            // For CommonJS modules, use require instead of import
-            if (exports_kind == .cjs) {
-                var import_record_indices = bun.handleOom(p.allocator.alloc(u32, 1));
-                const import_record_id = p.addImportRecord(.require, logger.Loc.Empty, "bun:test");
-                import_record_indices[0] = import_record_id;
-
-                // Create object binding pattern for destructuring
-                var properties = p.allocator.alloc(B.Property, items_count) catch unreachable;
-                var prop_i: usize = 0;
-                inline for (comptime std.meta.fieldNames(Jest)) |symbol_name| {
-                    if (p.symbols.items[@field(jest, symbol_name).innerIndex()].use_count_estimate > 0) {
-                        properties[prop_i] = .{
-                            .key = p.newExpr(E.String{
-                                .data = symbol_name,
-                            }, logger.Loc.Empty),
-                            .value = p.b(B.Identifier{ .ref = @field(jest, symbol_name) }, logger.Loc.Empty),
-                        };
-                        declared_symbols.appendAssumeCapacity(.{ .ref = @field(jest, symbol_name), .is_top_level = true });
-                        prop_i += 1;
-                    }
-                }
-
-                // Create: const { test, expect, ... } = require("bun:test")
-                var decls = p.allocator.alloc(G.Decl, 1) catch unreachable;
-                decls[0] = .{
-                    .binding = p.b(B.Object{
-                        .properties = properties,
-                    }, logger.Loc.Empty),
-                    .value = p.newExpr(E.RequireString{
-                        .import_record_index = import_record_id,
-                    }, logger.Loc.Empty),
-                };
-
-                var part_stmts = p.allocator.alloc(Stmt, 1) catch unreachable;
-                part_stmts[0] = p.s(S.Local{
-                    .kind = .k_const,
-                    .decls = Decl.List.fromOwnedSlice(decls),
-                }, logger.Loc.Empty);
-
-                before.append(js_ast.Part{
-                    .stmts = part_stmts,
-                    .declared_symbols = declared_symbols,
-                    .import_record_indices = bun.BabyList(u32).fromOwnedSlice(import_record_indices),
-                    .tag = .bun_test,
-                }) catch unreachable;
-            } else {
-                var import_record_indices = bun.handleOom(p.allocator.alloc(u32, 1));
-                const import_record_id = p.addImportRecord(.stmt, logger.Loc.Empty, "bun:test");
-                import_record_indices[0] = import_record_id;
-
-                // For ESM modules, use import statement
-                var clauses: []js_ast.ClauseItem = p.allocator.alloc(js_ast.ClauseItem, items_count) catch unreachable;
-                var clause_i: usize = 0;
-                inline for (comptime std.meta.fieldNames(Jest)) |symbol_name| {
-                    if (p.symbols.items[@field(jest, symbol_name).innerIndex()].use_count_estimate > 0) {
-                        clauses[clause_i] = js_ast.ClauseItem{
-                            .name = .{ .ref = @field(jest, symbol_name), .loc = logger.Loc.Empty },
-                            .alias = symbol_name,
-                            .alias_loc = logger.Loc.Empty,
-                            .original_name = "",
-                        };
-                        declared_symbols.appendAssumeCapacity(.{ .ref = @field(jest, symbol_name), .is_top_level = true });
-                        clause_i += 1;
-                    }
-                }
-
-                const import_stmt = p.s(
-                    S.Import{
-                        .namespace_ref = p.declareSymbol(.unbound, logger.Loc.Empty, "bun_test_import_namespace_for_internal_use_only") catch unreachable,
-                        .items = clauses,
-                        .import_record_index = import_record_id,
-                    },
-                    logger.Loc.Empty,
-                );
-
-                var part_stmts = try p.allocator.alloc(Stmt, 1);
-                part_stmts[0] = import_stmt;
-                before.append(js_ast.Part{
-                    .stmts = part_stmts,
-                    .declared_symbols = declared_symbols,
-                    .import_record_indices = bun.BabyList(u32).fromOwnedSlice(import_record_indices),
-                    .tag = .bun_test,
-                }) catch unreachable;
-            }
-
-            // If we injected jest globals, we need to disable the runtime transpiler cache
-            if (p.options.features.runtime_transpiler_cache) |cache| {
-                cache.input_hash = null;
-            }
-        }
-
         if (p.has_called_runtime) {
             var runtime_imports: [RuntimeImports.all.len]u8 = undefined;
             var iter = p.runtime_imports.iter();
@@ -1611,7 +1487,6 @@ const JSXImportScanner = js_parser.JSXImportScanner;
 const JSXParser = js_parser.JSXParser;
 const JavaScriptImportScanner = js_parser.JavaScriptImportScanner;
 const JavaScriptParser = js_parser.JavaScriptParser;
-const Jest = js_parser.Jest;
 const ParseStatementOptions = js_parser.ParseStatementOptions;
 const ScanPassResult = js_parser.ScanPassResult;
 const SideEffects = js_parser.SideEffects;

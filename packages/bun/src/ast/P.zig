@@ -302,8 +302,6 @@ pub fn NewParser_(
         /// configured to wrap exports. populated before visit pass starts.
         server_components_wrap_ref: Ref = Ref.None,
 
-        jest: Jest = .{},
-
         // Imports (both ES6 and CommonJS) are tracked at the top level
         import_records: ImportRecordList,
         import_records_for_current_part: List(u32) = .{},
@@ -2164,23 +2162,6 @@ pub fn NewParser_(
             p.require_ref = try p.declareCommonJSSymbol(.unbound, "require");
             p.dirname_ref = try p.declareCommonJSSymbol(.unbound, "__dirname");
             p.filename_ref = try p.declareCommonJSSymbol(.unbound, "__filename");
-
-            if (p.options.features.inject_jest_globals) {
-                p.jest.@"test" = try p.declareCommonJSSymbol(.unbound, "test");
-                p.jest.it = try p.declareCommonJSSymbol(.unbound, "it");
-                p.jest.describe = try p.declareCommonJSSymbol(.unbound, "describe");
-                p.jest.expect = try p.declareCommonJSSymbol(.unbound, "expect");
-                p.jest.expectTypeOf = try p.declareCommonJSSymbol(.unbound, "expectTypeOf");
-                p.jest.beforeAll = try p.declareCommonJSSymbol(.unbound, "beforeAll");
-                p.jest.beforeEach = try p.declareCommonJSSymbol(.unbound, "beforeEach");
-                p.jest.afterEach = try p.declareCommonJSSymbol(.unbound, "afterEach");
-                p.jest.afterAll = try p.declareCommonJSSymbol(.unbound, "afterAll");
-                p.jest.jest = try p.declareCommonJSSymbol(.unbound, "jest");
-                p.jest.vi = try p.declareCommonJSSymbol(.unbound, "vi");
-                p.jest.xit = try p.declareCommonJSSymbol(.unbound, "xit");
-                p.jest.xtest = try p.declareCommonJSSymbol(.unbound, "xtest");
-                p.jest.xdescribe = try p.declareCommonJSSymbol(.unbound, "xdescribe");
-            }
 
             if (p.options.features.react_fast_refresh) {
                 p.react_refresh.create_signature_ref = try p.declareGeneratedSymbol(.other, "$RefreshSig$");
@@ -6922,7 +6903,6 @@ const ImportScanner = js_parser.ImportScanner;
 const InvalidLoc = js_parser.InvalidLoc;
 const JSXImport = js_parser.JSXImport;
 const JSXTransformType = js_parser.JSXTransformType;
-const Jest = js_parser.Jest;
 const LocList = js_parser.LocList;
 const MacroState = js_parser.MacroState;
 const ParseStatementOptions = js_parser.ParseStatementOptions;

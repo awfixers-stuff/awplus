@@ -238,7 +238,6 @@ pub fn transpileSourceCode(
                 .dont_bundle_twice = true,
                 .allow_commonjs = true,
                 .module_type = module_type_only_for_wrappables,
-                .inject_jest_globals = jsc_vm.transpiler.options.rewrite_jest_for_tests,
                 .keep_json_and_toml_as_one_statement = true,
                 .allow_bytecode_cache = true,
                 .set_breakpoint_on_first_line = is_main and

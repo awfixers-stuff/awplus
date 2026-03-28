@@ -68,7 +68,6 @@ pub const Tag = enum {
     DevServerMemoryVisualizerTick,
     AbortSignalTimeout,
     DateHeaderTimer,
-    BunTest,
     EventLoopDelayMonitor,
 
     pub fn Type(comptime T: Tag) type {
@@ -93,7 +92,6 @@ pub const Tag = enum {
             => bun.bake.DevServer,
             .AbortSignalTimeout => jsc.WebCore.AbortSignal.Timeout,
             .DateHeaderTimer => jsc.API.Timer.DateHeaderTimer,
-            .BunTest => jsc.Jest.bun_test.BunTest,
             .EventLoopDelayMonitor => jsc.API.Timer.EventLoopDelayMonitor,
         };
     }
@@ -101,7 +99,6 @@ pub const Tag = enum {
     pub fn allowFakeTimers(self: Tag) bool {
         return switch (self) {
             .WTFTimer, // internal
-            .BunTest, // for test timeouts
             .EventLoopDelayMonitor, // probably important
             .StatWatcherScheduler,
             => false,
@@ -181,11 +178,6 @@ pub fn fire(self: *Self, now: *const timespec, vm: *VirtualMachine) void {
         .DateHeaderTimer => {
             const date_header_timer = @as(*jsc.API.Timer.DateHeaderTimer, @fieldParentPtr("event_loop_timer", self));
             date_header_timer.run(vm);
-        },
-        .BunTest => {
-            var container_strong = jsc.Jest.bun_test.BunTestPtr.cloneFromRawUnsafe(@fieldParentPtr("timer", self));
-            defer container_strong.deinit();
-            jsc.Jest.bun_test.BunTest.bunTestTimeoutCallback(container_strong, now, vm);
         },
         .EventLoopDelayMonitor => {
             const monitor = @as(*jsc.API.Timer.EventLoopDelayMonitor, @fieldParentPtr("event_loop_timer", self));

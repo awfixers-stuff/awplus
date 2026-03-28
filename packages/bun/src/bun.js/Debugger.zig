@@ -13,7 +13,6 @@ mode: enum {
     connect,
 } = .listen,
 
-test_reporter_agent: TestReporterAgent = .{},
 lifecycle_reporter_agent: LifecycleAgent = .{},
 frontend_dev_server_agent: BunFrontendDevServerAgent = .{},
 http_server_agent: HTTPServerAgent = .{},
@@ -120,9 +119,7 @@ pub fn create(this: *VirtualMachine, globalObject: *JSGlobalObject) !void {
     jsc.markBinding(@src());
     if (!has_created_debugger) {
         has_created_debugger = true;
-        std.mem.doNotOptimizeAway(&TestReporterAgent.Bun__TestReporterAgentDisable);
         std.mem.doNotOptimizeAway(&LifecycleAgent.Bun__LifecycleAgentDisable);
-        std.mem.doNotOptimizeAway(&TestReporterAgent.Bun__TestReporterAgentEnable);
         std.mem.doNotOptimizeAway(&LifecycleAgent.Bun__LifecycleAgentEnable);
         var debugger = &this.debugger.?;
         debugger.script_execution_context_id = Bun__createJSDebugger(globalObject);
@@ -294,166 +291,6 @@ pub fn willDispatchAsyncCall(globalObject: *JSGlobalObject, call: AsyncCallType,
     jsc.markBinding(@src());
     Debugger__willDispatchAsyncCall(globalObject, call, id);
 }
-
-pub const TestReporterAgent = struct {
-    handle: ?*Handle = null,
-    const debug = Output.scoped(.TestReporterAgent, .visible);
-
-    /// this enum is kept in sync with c++ InspectorTestReporterAgent.cpp `enum class BunTestStatus`
-    pub const TestStatus = enum(u8) {
-        pass,
-        fail,
-        timeout,
-        skip,
-        todo,
-        skipped_because_label,
-    };
-
-    pub const TestType = enum(u8) {
-        @"test" = 0,
-        describe = 1,
-    };
-
-    pub const Handle = opaque {
-        extern "c" fn Bun__TestReporterAgentReportTestFound(agent: *Handle, callFrame: *jsc.CallFrame, testId: c_int, name: *bun.String, item_type: TestType, parentId: c_int) void;
-        extern "c" fn Bun__TestReporterAgentReportTestFoundWithLocation(agent: *Handle, testId: c_int, name: *bun.String, item_type: TestType, parentId: c_int, sourceURL: *bun.String, line: c_int) void;
-        extern "c" fn Bun__TestReporterAgentReportTestStart(agent: *Handle, testId: c_int) void;
-        extern "c" fn Bun__TestReporterAgentReportTestEnd(agent: *Handle, testId: c_int, bunTestStatus: TestStatus, elapsed: f64) void;
-
-        pub fn reportTestFound(this: *Handle, callFrame: *jsc.CallFrame, testId: i32, name: *bun.String, item_type: TestType, parentId: i32) void {
-            Bun__TestReporterAgentReportTestFound(this, callFrame, testId, name, item_type, parentId);
-        }
-
-        pub fn reportTestFoundWithLocation(this: *Handle, testId: i32, name: *bun.String, item_type: TestType, parentId: i32, sourceURL: *bun.String, line: i32) void {
-            Bun__TestReporterAgentReportTestFoundWithLocation(this, testId, name, item_type, parentId, sourceURL, line);
-        }
-
-        pub fn reportTestStart(this: *Handle, testId: c_int) void {
-            Bun__TestReporterAgentReportTestStart(this, testId);
-        }
-
-        pub fn reportTestEnd(this: *Handle, testId: c_int, bunTestStatus: TestStatus, elapsed: f64) void {
-            Bun__TestReporterAgentReportTestEnd(this, testId, bunTestStatus, elapsed);
-        }
-    };
-    pub export fn Bun__TestReporterAgentEnable(agent: *Handle) void {
-        if (VirtualMachine.get().debugger) |*debugger| {
-            debug("enable", .{});
-            debugger.test_reporter_agent.handle = agent;
-
-            // Retroactively report any tests that were already discovered before the debugger connected
-            retroactivelyReportDiscoveredTests(agent);
-        }
-    }
-
-    /// When TestReporter.enable is called after test collection has started/finished,
-    /// we need to retroactively assign test IDs and report discovered tests.
-    fn retroactivelyReportDiscoveredTests(agent: *Handle) void {
-        const Jest = jsc.Jest.Jest;
-        const runner = Jest.runner orelse return;
-        const active_file = runner.bun_test_root.active_file.get() orelse return;
-
-        // Only report if we're in collection or execution phase (tests have been discovered)
-        switch (active_file.phase) {
-            .collection, .execution => {},
-            .done => return,
-        }
-
-        // Get the file path for source location info
-        const file_path = runner.files.get(active_file.file_id).source.path.text;
-        var source_url = bun.String.init(file_path);
-
-        // Track the maximum ID we assign
-        var max_id: i32 = 0;
-
-        // Recursively report all discovered tests starting from root scope
-        const root_scope = active_file.collection.root_scope;
-        retroactivelyReportScope(agent, root_scope, -1, &max_id, &source_url);
-
-        debug("retroactively reported {} tests", .{max_id});
-    }
-
-    fn retroactivelyReportScope(agent: *Handle, scope: *bun_test.DescribeScope, parent_id: i32, max_id: *i32, source_url: *bun.String) void {
-        for (scope.entries.items) |*entry| {
-            switch (entry.*) {
-                .describe => |describe| {
-                    // Only report and assign ID if not already assigned
-                    if (describe.base.test_id_for_debugger == 0) {
-                        max_id.* += 1;
-                        const test_id = max_id.*;
-                        // Assign the ID so start/end events will fire during execution
-                        describe.base.test_id_for_debugger = test_id;
-                        var name = bun.String.init(describe.base.name orelse "(unnamed)");
-                        agent.reportTestFoundWithLocation(
-                            test_id,
-                            &name,
-                            .describe,
-                            parent_id,
-                            source_url,
-                            @intCast(describe.base.line_no),
-                        );
-                        // Recursively report children with this describe as parent
-                        retroactivelyReportScope(agent, describe, test_id, max_id, source_url);
-                    } else {
-                        // Already has ID, just recurse with existing ID as parent
-                        retroactivelyReportScope(agent, describe, describe.base.test_id_for_debugger, max_id, source_url);
-                    }
-                },
-                .test_callback => |test_entry| {
-                    // Only report and assign ID if not already assigned
-                    if (test_entry.base.test_id_for_debugger == 0) {
-                        max_id.* += 1;
-                        const test_id = max_id.*;
-                        // Assign the ID so start/end events will fire during execution
-                        test_entry.base.test_id_for_debugger = test_id;
-                        var name = bun.String.init(test_entry.base.name orelse "(unnamed)");
-                        agent.reportTestFoundWithLocation(
-                            test_id,
-                            &name,
-                            .@"test",
-                            parent_id,
-                            source_url,
-                            @intCast(test_entry.base.line_no),
-                        );
-                    }
-                },
-            }
-        }
-    }
-
-    const bun_test = jsc.Jest.bun_test;
-    pub export fn Bun__TestReporterAgentDisable(_: *Handle) void {
-        if (VirtualMachine.get().debugger) |*debugger| {
-            debug("disable", .{});
-            debugger.test_reporter_agent.handle = null;
-        }
-    }
-
-    /// Caller must ensure that it is enabled first.
-    ///
-    /// Since we may have to call .deinit on the name string.
-    pub fn reportTestFound(this: TestReporterAgent, callFrame: *jsc.CallFrame, test_id: i32, name: *bun.String, item_type: TestType, parentId: i32) void {
-        debug("reportTestFound", .{});
-
-        this.handle.?.reportTestFound(callFrame, test_id, name, item_type, parentId);
-    }
-
-    /// Caller must ensure that it is enabled first.
-    pub fn reportTestStart(this: TestReporterAgent, test_id: i32) void {
-        debug("reportTestStart", .{});
-        this.handle.?.reportTestStart(test_id);
-    }
-
-    /// Caller must ensure that it is enabled first.
-    pub fn reportTestEnd(this: TestReporterAgent, test_id: i32, bunTestStatus: TestStatus, elapsed: f64) void {
-        debug("reportTestEnd", .{});
-        this.handle.?.reportTestEnd(test_id, bunTestStatus, elapsed);
-    }
-
-    pub fn isEnabled(this: TestReporterAgent) bool {
-        return this.handle != null;
-    }
-};
 
 pub const LifecycleAgent = struct {
     handle: ?*Handle = null,

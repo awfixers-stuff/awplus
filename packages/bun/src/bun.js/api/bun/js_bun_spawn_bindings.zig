@@ -954,17 +954,7 @@ pub fn spawnMaybeSync(
         const sync_loop = jsc_vm.rareData().spawnSyncEventLoop(jsc_vm);
 
         while (subprocess.computeHasPendingActivity()) {
-            // Re-evaluate this at each iteration of the loop since it may change between iterations.
-            const bun_test_timeout: bun.timespec = if (bun.jsc.Jest.Jest.runner) |runner| runner.getActiveTimeout() else .epoch;
-            const has_bun_test_timeout = !bun_test_timeout.eql(&.epoch);
-
-            if (has_bun_test_timeout) {
-                switch (bun_test_timeout.orderIgnoreEpoch(user_timespec)) {
-                    .lt => absolute_timespec = bun_test_timeout,
-                    .eq => {},
-                    .gt => absolute_timespec = user_timespec,
-                }
-            } else if (has_user_timespec) {
+            if (has_user_timespec) {
                 absolute_timespec = user_timespec;
             } else {
                 absolute_timespec = .epoch;
@@ -996,30 +986,6 @@ pub fn spawnMaybeSync(
                     if (did_user_timeout) {
                         did_timeout = true;
                         _ = subprocess.tryKill(subprocess.killSignal);
-                    }
-
-                    // Support bun:test timeouts AND spawnSync() timeout.
-                    // There is a scenario where inside of spawnSync() a totally
-                    // different test fails, and that SHOULD be okay.
-                    if (has_bun_test_timeout) {
-                        if (bun_test_timeout.order(&now) == .lt) {
-                            var active_file_strong = bun.jsc.Jest.Jest.runner.?.bun_test_root.active_file
-                                // TODO: add a .cloneNonOptional()?
-                                .clone();
-
-                            defer active_file_strong.deinit();
-                            var taken_active_file = active_file_strong.take().?;
-                            defer taken_active_file.deinit();
-
-                            bun.jsc.Jest.Jest.runner.?.removeActiveTimeout(jsc_vm);
-
-                            // This might internally call `std.c.kill` on this
-                            // spawnSync process. Even if we do that, we still
-                            // need to reap the process. So we may go through
-                            // the event loop again, but it should wake up
-                            // ~instantly so we can drain the events.
-                            jsc.Jest.bun_test.BunTest.bunTestTimeoutCallback(taken_active_file, &absolute_timespec, jsc_vm);
-                        }
                     }
                 },
             }

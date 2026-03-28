@@ -6,7 +6,6 @@
 const VirtualMachine = @This();
 
 export var has_bun_garbage_collector_flag_enabled = false;
-pub export var isBunTest: bool = false;
 pub export var Bun__defaultRemainingRunsUntilSkipReleaseAccess: c_int = 10;
 
 // TODO: evaluate if this has any measurable performance impact.
@@ -568,12 +567,6 @@ pub fn unhandledRejection(this: *jsc.VirtualMachine, globalObject: *JSGlobalObje
         return;
     }
 
-    if (isBunTest) {
-        this.unhandled_error_counter += 1;
-        this.onUnhandledRejection(this, globalObject, reason);
-        return;
-    }
-
     switch (this.unhandledRejectionsMode()) {
         .bun => {
             if (Bun__handleUnhandledRejection(globalObject, reason, promise) > 0) return;
@@ -654,12 +647,6 @@ pub fn handledPromise(this: *jsc.VirtualMachine, globalObject: *JSGlobalObject, 
 
 pub fn uncaughtException(this: *jsc.VirtualMachine, globalObject: *JSGlobalObject, err: JSValue, is_rejection: bool) bool {
     if (this.isShuttingDown()) {
-        return true;
-    }
-
-    if (isBunTest) {
-        this.unhandled_error_counter += 1;
-        this.onUnhandledRejection(this, globalObject, err);
         return true;
     }
 
@@ -2226,35 +2213,6 @@ export fn Bun__VirtualMachine__setOverrideModuleRunMainPromise(vm: *VirtualMachi
     }
 }
 
-pub fn reloadEntryPointForTestRunner(this: *VirtualMachine, entry_path: []const u8) !*JSInternalPromise {
-    this.has_loaded = false;
-    this.main = entry_path;
-    this.main_resolved_path.deref();
-    this.main_resolved_path = .empty;
-    this.main_hash = Watcher.getHash(entry_path);
-    this.overridden_main.deinit();
-
-    this.eventLoop().ensureWaker();
-
-    try this.ensureDebugger(true);
-
-    if (!this.transpiler.options.disable_transpilation) {
-        if (try this.loadPreloads()) |promise| {
-            JSValue.fromCell(promise).ensureStillAlive();
-            this.pending_internal_promise = promise;
-            JSValue.fromCell(promise).protect();
-
-            return promise;
-        }
-    }
-
-    const promise = JSModuleLoader.loadAndEvaluateModule(this.global, &String.fromBytes(this.main)) orelse return error.JSError;
-    this.pending_internal_promise = promise;
-    JSValue.fromCell(promise).ensureStillAlive();
-
-    return promise;
-}
-
 // worker dont has bun_watcher and also we dont wanna call autoTick before dispatchOnline
 pub fn loadEntryPointForWebWorker(this: *VirtualMachine, entry_path: string) anyerror!*JSInternalPromise {
     const promise = try this.reloadEntryPoint(entry_path);
@@ -2267,38 +2225,6 @@ pub fn loadEntryPointForWebWorker(this: *VirtualMachine, entry_path: string) any
             return error.WorkerTerminated;
         }
     }
-    return this.pending_internal_promise.?;
-}
-
-pub fn loadEntryPointForTestRunner(this: *VirtualMachine, entry_path: string) anyerror!*JSInternalPromise {
-    var promise = try this.reloadEntryPointForTestRunner(entry_path);
-
-    // pending_internal_promise can change if hot module reloading is enabled
-    if (this.isWatcherEnabled()) {
-        this.eventLoop().performGC();
-        switch (this.pending_internal_promise.?.status()) {
-            .pending => {
-                while (this.pending_internal_promise.?.status() == .pending) {
-                    this.eventLoop().tick();
-
-                    if (this.pending_internal_promise.?.status() == .pending) {
-                        this.eventLoop().autoTick();
-                    }
-                }
-            },
-            else => {},
-        }
-    } else {
-        if (promise.status() == .rejected) {
-            return promise;
-        }
-
-        this.eventLoop().performGC();
-        this.waitForPromise(.{ .internal = promise });
-    }
-
-    this.eventLoop().autoTick();
-
     return this.pending_internal_promise.?;
 }
 

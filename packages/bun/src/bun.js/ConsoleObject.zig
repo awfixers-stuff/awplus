@@ -167,10 +167,6 @@ fn messageWithTypeAndLevel_(
         console.writer;
     const Writer = @TypeOf(writer);
 
-    if (bun.jsc.Jest.Jest.runner) |runner| {
-        runner.bun_test_root.onBeforePrint();
-    }
-
     var print_length = len;
     // Get console depth from CLI options or bunfig, fallback to default
     const cli_context = CLI.get();
@@ -3802,7 +3798,11 @@ const string = []const u8;
 
 const std = @import("std");
 const CLI = @import("../cli.zig").Command;
-const JestPrettyFormat = @import("./test/pretty_format.zig").JestPrettyFormat;
+const JestPrettyFormat = struct {
+    pub fn printAsymmetricMatcher(_: *const anyopaque, _: type, _: *anyopaque, _: *anyopaque, _: *anyopaque, _: JSValue, _: bool) !bool {
+        return false;
+    }
+};
 
 const bun = @import("bun");
 const Environment = bun.Environment;

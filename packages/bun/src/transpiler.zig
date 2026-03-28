@@ -959,7 +959,6 @@ pub const Transpiler = struct {
         macro_js_ctx: MacroJSValueType = default_macro_js_value,
         virtual_source: ?*const logger.Source = null,
         replace_exports: runtime.Runtime.Features.ReplaceableExport.Map = .{},
-        inject_jest_globals: bool = false,
         set_breakpoint_on_first_line: bool = false,
         emit_decorator_metadata: bool = false,
         experimental_decorators: bool = false,
@@ -1129,7 +1128,6 @@ pub const Transpiler = struct {
                 opts.features.auto_import_jsx = transpiler.options.auto_import_jsx;
                 opts.warn_about_unbundled_modules = !target.isBun();
 
-                opts.features.inject_jest_globals = this_parse.inject_jest_globals;
                 opts.features.minify_syntax = transpiler.options.minify_syntax;
                 opts.features.minify_identifiers = transpiler.options.minify_identifiers;
                 opts.features.dead_code_elimination = transpiler.options.dead_code_elimination;

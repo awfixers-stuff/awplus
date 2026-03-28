@@ -1825,8 +1825,6 @@ pub const BundleOptions = struct {
     load_tsconfig_json: bool = true,
     load_package_json: bool = true,
 
-    rewrite_jest_for_tests: bool = false,
-
     macro_remap: MacroRemap = MacroRemap{},
     no_macros: bool = false,
 
@@ -1910,7 +1908,7 @@ pub const BundleOptions = struct {
     };
 
     pub fn isTest(this: *const BundleOptions) bool {
-        return this.rewrite_jest_for_tests;
+        return false;
     }
 
     pub fn setProduction(this: *BundleOptions, value: bool) void {
