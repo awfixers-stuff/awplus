@@ -38,4 +38,4 @@ Weblang assumes a unified license across the project. Any code chunks currently 
 
 ## Contributing
 
-Other developers are already assisting. If you would like to contribute, apply to join the Discord server. We will evaluate your background and what you bring to the project.
+Other developers are already assisting. If you would like to contribute, apply to join the [Discord] server. We will evaluate your background and what you bring to the project.
